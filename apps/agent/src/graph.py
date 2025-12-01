@@ -175,6 +175,7 @@ def create_investigation_graph(
     datadog_creds: dict | None = None,
     github_creds: dict | None = None,
     slack_creds: dict | None = None,
+    org_id: str | None = None,
 ):
     """
     Create the investigation graph using LangGraph's create_react_agent.
@@ -183,6 +184,8 @@ def create_investigation_graph(
     - OpenRouter x-ai/grok-4.1-fast:free model
     - All investigation tools (Datadog, GitHub, Slack)
     - Comprehensive system prompt for SRE investigations
+
+    Credentials can be provided directly or fetched from Supabase Vault using org_id.
     """
 
     # Initialize model via OpenRouter
@@ -193,7 +196,21 @@ def create_investigation_graph(
         api_key=OPENROUTER_API_KEY,
     )
 
-    # Load credentials from environment if not provided
+    # If org_id provided, fetch credentials from Supabase Vault
+    if org_id and (datadog_creds is None or github_creds is None or slack_creds is None):
+        try:
+            from src.credentials import get_all_credentials
+            vault_creds = get_all_credentials(org_id)
+            if datadog_creds is None:
+                datadog_creds = vault_creds.get("datadog")
+            if github_creds is None:
+                github_creds = vault_creds.get("github")
+            if slack_creds is None:
+                slack_creds = vault_creds.get("slack")
+        except Exception as e:
+            print(f"Warning: Failed to fetch credentials from vault: {e}")
+
+    # Fallback: Load credentials from environment if not provided
     if datadog_creds is None:
         dd_api_key = os.getenv("DD_API_KEY")
         dd_app_key = os.getenv("DD_APP_KEY")
@@ -236,7 +253,11 @@ def create_investigation_graph(
 
 def graph(config: RunnableConfig):
     """Factory function for LangGraph Platform."""
-    return create_investigation_graph(config=config)
+    # Extract org_id from configurable if provided
+    configurable = config.get("configurable", {}) if config else {}
+    org_id = configurable.get("org_id")
+
+    return create_investigation_graph(config=config, org_id=org_id)
 
 
 # =============================================================================
