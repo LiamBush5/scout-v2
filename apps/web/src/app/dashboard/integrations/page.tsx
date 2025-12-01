@@ -404,7 +404,7 @@ function IntegrationsPageContent() {
                     <div>
                         <p className="text-sm font-medium">Datadog Webhook URL</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                            Add this webhook to your Datadog monitors to automatically trigger Scout investigations when alerts fire.
+                            Add this webhook to your Datadog monitors to automatically trigger Scout investigations.
                         </p>
                     </div>
                     <div className="flex gap-2">
