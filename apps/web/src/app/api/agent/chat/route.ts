@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
 
                 // Load credentials for this org
                 const supabaseAdmin = getSupabaseAdmin()
-                credentials = await loadCredentials(orgId, supabaseAdmin)
+                credentials = await loadCredentials(profile.current_org_id, supabaseAdmin)
 
                 // Debug: log which credentials were loaded
                 console.log('[Chat API] Loaded credentials for org:', orgId, {
