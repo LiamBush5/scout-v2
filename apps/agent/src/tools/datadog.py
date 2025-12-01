@@ -250,16 +250,21 @@ def create_datadog_tools(credentials: dict | None) -> list:
 
             with ApiClient(config) as api_client:
                 api = logs_api.LogsApi(api_client)
+                from datadog_api_client.v2.model.logs_list_request import LogsListRequest
+                from datadog_api_client.v2.model.logs_list_request_filter import LogsListRequestFilter
+                from datadog_api_client.v2.model.logs_list_request_page import LogsListRequestPage
+                from datadog_api_client.v2.model.logs_sort import LogsSort
 
-                response = api.list_logs({
-                    "filter": {
-                        "query": query,
-                        "from": f"now-{minutes_back}m",
-                        "to": "now",
-                    },
-                    "sort": "-timestamp",
-                    "page": {"limit": limit},
-                })
+                body = LogsListRequest(
+                    filter=LogsListRequestFilter(
+                        query=query,
+                        _from=f"now-{minutes_back}m",
+                        to="now",
+                    ),
+                    sort=LogsSort.TIMESTAMP_DESCENDING,
+                    page=LogsListRequestPage(limit=limit),
+                )
+                response = api.list_logs(body=body)
 
                 logs = []
                 error_messages = []

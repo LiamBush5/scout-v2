@@ -6,12 +6,16 @@ Run an investigation through the LangGraph server.
 import asyncio
 from langgraph_sdk import get_client
 
+# Your organization ID from Supabase
+ORG_ID = "536462dc-3798-48a4-98b5-45a239bc733a"
+
 async def main():
     client = get_client(url="http://127.0.0.1:2024")
 
     # Create a thread
     thread = await client.threads.create()
     print(f"Created thread: {thread['thread_id']}")
+    print(f"Using org_id: {ORG_ID} (credentials from Supabase Vault)")
 
     # Prepare the investigation message
     message = """A production incident requires investigation.
@@ -31,11 +35,12 @@ Begin your investigation:
     print("STARTING INVESTIGATION")
     print("=" * 60 + "\n")
 
-    # Stream the response
+    # Stream the response with org_id in config to fetch credentials from Supabase
     async for chunk in client.runs.stream(
         thread_id=thread['thread_id'],
         assistant_id="investigation",
         input={"messages": [{"role": "user", "content": message}]},
+        config={"configurable": {"org_id": ORG_ID}},
         stream_mode="messages",
     ):
         if hasattr(chunk, 'data') and chunk.data:
