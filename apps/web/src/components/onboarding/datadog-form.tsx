@@ -23,7 +23,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { datadogCredentialsSchema, type DatadogCredentials } from '@/lib/validations/onboarding'
-import { Loader2, ExternalLink, Eye, EyeOff } from 'lucide-react'
+import { Loader2, ExternalLink, Eye, EyeOff, X } from 'lucide-react'
 
 interface DatadogFormProps {
   onSubmit: (data: DatadogCredentials) => Promise<void>
@@ -59,15 +59,20 @@ export function DatadogForm({ onSubmit, onCancel }: DatadogFormProps) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium">Connect Datadog</h3>
-            <a
-              href="https://app.datadoghq.com/organization-settings/api-keys"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-            >
-              Get API keys
-              <ExternalLink className="h-3 w-3" />
-            </a>
+            <div className="flex items-center gap-2">
+              <a
+                href="https://app.datadoghq.com/organization-settings/api-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+              >
+                Get API keys
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onCancel}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <p className="text-sm text-muted-foreground">
             Enter your Datadog API credentials. We recommend creating a dedicated

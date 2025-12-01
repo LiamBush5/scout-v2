@@ -9,7 +9,7 @@ function getSupabaseAdmin() {
   )
 }
 
-// PATCH - Update Slack settings (channel)
+// PATCH - Update Slack settings (channels - supports single or multiple)
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -31,15 +31,17 @@ export async function PATCH(request: NextRequest) {
 
     const orgId = profile.current_org_id
     const body = await request.json()
-    const { channel_id } = body
 
-    if (!channel_id) {
-      return NextResponse.json({ error: 'Channel ID is required' }, { status: 400 })
+    // Support both single channel_id and multiple channel_ids
+    const channelIds: string[] = body.channel_ids || (body.channel_id ? [body.channel_id] : [])
+
+    if (channelIds.length === 0) {
+      return NextResponse.json({ error: 'At least one channel ID is required' }, { status: 400 })
     }
 
     const supabaseAdmin = getSupabaseAdmin()
 
-    // Get bot token to fetch channel name
+    // Get bot token to fetch channel names
     const { data: botToken } = await supabaseAdmin.rpc('get_integration_secret', {
       p_org_id: orgId,
       p_provider: 'slack',
@@ -50,15 +52,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Slack not connected' }, { status: 400 })
     }
 
-    // Get channel info from Slack
-    const channelResponse = await fetch(`https://slack.com/api/conversations.info?channel=${channel_id}`, {
-      headers: {
-        'Authorization': `Bearer ${botToken}`,
-      },
-    })
-
-    const channelData = await channelResponse.json()
-    const channelName = channelData.ok ? channelData.channel?.name : channel_id
+    // Get channel info from Slack for each channel
+    const channelNames: string[] = []
+    for (const channelId of channelIds) {
+      const channelResponse = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
+        headers: {
+          'Authorization': `Bearer ${botToken}`,
+        },
+      })
+      const channelData = await channelResponse.json()
+      channelNames.push(channelData.ok ? channelData.channel?.name : channelId)
+    }
 
     // Get current integration
     const { data: integration } = await supabaseAdmin
@@ -72,11 +76,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Slack not connected' }, { status: 400 })
     }
 
-    // Update metadata with channel
+    // Update metadata with channels (support both single and multiple)
     const newMetadata = {
       ...integration.metadata,
-      channel_id,
-      channel_name: channelName,
+      channel_ids: channelIds,
+      channel_names: channelNames,
+      // Keep backward compatibility with single channel
+      channel_id: channelIds[0],
+      channel_name: channelNames[0],
     }
 
     await supabaseAdmin
@@ -88,7 +95,11 @@ export async function PATCH(request: NextRequest) {
       .eq('org_id', orgId)
       .eq('provider', 'slack')
 
-    return NextResponse.json({ success: true, channel_name: channelName })
+    return NextResponse.json({
+      success: true,
+      channel_ids: channelIds,
+      channel_names: channelNames,
+    })
   } catch (error) {
     console.error('Slack update error:', error)
     return NextResponse.json({ error: 'Failed to update Slack settings' }, { status: 500 })

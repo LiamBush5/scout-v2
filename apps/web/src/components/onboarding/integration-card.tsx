@@ -19,6 +19,8 @@ export interface IntegrationCardProps {
   icon?: React.ReactNode
   /** URL to logo image */
   logo?: string
+  /** Invert logo colors for dark backgrounds */
+  invertLogo?: boolean
   /** Description text */
   description: string
   /** Current connection status */
@@ -62,6 +64,7 @@ export function IntegrationCard({
   name,
   icon,
   logo,
+  invertLogo,
   description,
   status,
   connectedAccount,
@@ -83,7 +86,7 @@ export function IntegrationCard({
             alt={`${name} logo`}
             width={20}
             height={20}
-            className="object-contain opacity-80 grayscale"
+            className={`object-contain ${invertLogo ? 'invert' : ''}`}
             unoptimized
           />
         ) : (

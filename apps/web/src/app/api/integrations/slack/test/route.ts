@@ -55,58 +55,88 @@ export async function POST() {
       return NextResponse.json({ error: 'Slack not connected' }, { status: 400 })
     }
 
-    const channelId = integration.metadata?.channel_id
-    if (!channelId) {
-      return NextResponse.json({ error: 'No channel configured. Please select a channel first.' }, { status: 400 })
+    // Support both single channel_id and multiple channel_ids
+    const channelIds: string[] = integration.metadata?.channel_ids ||
+      (integration.metadata?.channel_id ? [integration.metadata.channel_id as string] : [])
+
+    if (channelIds.length === 0) {
+      return NextResponse.json({ error: 'No channels configured. Please select at least one channel first.' }, { status: 400 })
     }
 
-    // Send test message
-    const response = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${botToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        channel: channelId,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: ':white_check_mark: *Scout AI Test Message*\n\nYour Slack integration is working correctly! Investigation results will be posted to this channel.',
-            },
-          },
-          {
-            type: 'context',
-            elements: [
-              {
+    const results: { channelId: string; success: boolean; error?: string }[] = []
+
+    // Send test message to all selected channels
+    for (const channelId of channelIds) {
+      const response = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${botToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channel: channelId,
+          blocks: [
+            {
+              type: 'section',
+              text: {
                 type: 'mrkdwn',
-                text: `Sent at ${new Date().toISOString()}`,
+                text: ':white_check_mark: *Scout AI Test Message*\n\nYour Slack integration is working correctly! Investigation results will be posted to this channel.',
               },
-            ],
-          },
-        ],
-      }),
-    })
+            },
+            {
+              type: 'context',
+              elements: [
+                {
+                  type: 'mrkdwn',
+                  text: `Sent at ${new Date().toISOString()}`,
+                },
+              ],
+            },
+          ],
+        }),
+      })
 
-    const data = await response.json()
+      const data = await response.json()
 
-    if (!data.ok) {
-      console.error('Slack API error:', data.error)
+      if (!data.ok) {
+        console.error('Slack API error:', data.error, 'for channel:', channelId)
 
-      // Handle specific errors
-      if (data.error === 'channel_not_found') {
-        return NextResponse.json({ error: 'Channel not found. Please select a different channel.' }, { status: 400 })
+        let errorMessage = data.error || 'Failed to send message'
+        if (data.error === 'channel_not_found') {
+          errorMessage = 'Channel not found'
+        } else if (data.error === 'not_in_channel') {
+          errorMessage = 'Bot not in channel - please invite @Scout AI'
+        }
+
+        results.push({ channelId, success: false, error: errorMessage })
+      } else {
+        results.push({ channelId, success: true })
       }
-      if (data.error === 'not_in_channel') {
-        return NextResponse.json({ error: 'Bot is not in this channel. Please invite @Scout AI to the channel.' }, { status: 400 })
-      }
-
-      return NextResponse.json({ error: data.error || 'Failed to send message' }, { status: 400 })
     }
 
-    return NextResponse.json({ success: true, message_ts: data.ts })
+    const successCount = results.filter(r => r.success).length
+    const failedResults = results.filter(r => !r.success)
+
+    if (successCount === 0) {
+      return NextResponse.json({
+        error: failedResults[0]?.error || 'Failed to send to all channels'
+      }, { status: 400 })
+    }
+
+    if (failedResults.length > 0) {
+      return NextResponse.json({
+        success: true,
+        partial: true,
+        message: `Sent to ${successCount} of ${channelIds.length} channels`,
+        results,
+      })
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Sent to ${successCount} channel${successCount !== 1 ? 's' : ''}`,
+      results,
+    })
   } catch (error) {
     console.error('Slack test message error:', error)
     return NextResponse.json({ error: 'Failed to send test message' }, { status: 500 })

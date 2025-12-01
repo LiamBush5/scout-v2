@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Loader2,
   AlertCircle,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -119,7 +120,17 @@ export function GitHubSettings({ metadata, onUpdate, onClose }: GitHubSettingsPr
   }
 
   return (
-    <Card className="p-5 ml-14 border-l-2 border-l-primary/50 border-border/50 bg-card/50">
+    <Card className="p-5 border-border/50 bg-card/50">
+      {/* Header with close button */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-medium">GitHub Settings</h3>
+        {onClose && (
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
       <div className="space-y-5">
         {/* Account info */}
         <div className="flex items-center justify-between pb-4 border-b border-border/50">
@@ -263,7 +274,7 @@ export function GitHubSettings({ metadata, onUpdate, onClose }: GitHubSettingsPr
  */
 export function GitHubSettingsSkeleton() {
   return (
-    <Card className="p-5 ml-14 border-l-2 border-l-primary/50 border-border/50">
+    <Card className="p-5 border-border/50">
       <div className="space-y-5">
         <div className="flex items-center justify-between pb-4 border-b border-border/50">
           <div className="space-y-2">

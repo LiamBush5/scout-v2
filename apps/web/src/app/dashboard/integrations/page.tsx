@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { IntegrationCard } from '@/components/onboarding/integration-card'
 import { GitHubSettings } from '@/components/integrations/github-settings'
+import { SlackSettings } from '@/components/integrations/slack-settings'
 import { DatadogForm } from '@/components/onboarding/datadog-form'
 import { type DatadogCredentials } from '@/lib/validations/onboarding'
 import { createClient } from '@/lib/supabase/client'
@@ -317,7 +318,6 @@ function IntegrationsPageContent() {
                     <IntegrationCard
                         name="GitHub"
                         icon={<Github className="h-5 w-5" />}
-                        logo="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.svg"
                         description="Connect GitHub for enhanced codebase context and deployment tracking"
                         status={
                             integrationStatus.github.connected
@@ -358,9 +358,20 @@ function IntegrationsPageContent() {
                         }
                         connectedAccount={getConnectedAccount('slack')}
                         onConnect={handleSlackConnect}
+                        onManage={() => handleManage('slack')}
                         onDisconnect={() => handleDisconnectClick('slack')}
+                        isManaging={managingProvider === 'slack'}
                     />
                 </div>
+
+                {/* Slack Settings Panel */}
+                {managingProvider === 'slack' && integrationStatus.slack.connected && (
+                    <SlackSettings
+                        metadata={integrationStatus.slack.metadata || {}}
+                        onUpdate={(metadata) => handleMetadataUpdate('slack', metadata)}
+                        onClose={() => setManagingProvider(null)}
+                    />
+                )}
 
                 {/* Datadog */}
                 <div className="rounded-lg border border-border/50 overflow-hidden">
@@ -378,7 +389,7 @@ function IntegrationsPageContent() {
 
             {/* Inline Datadog form */}
             {showDatadogForm && !integrationStatus.datadog.connected && (
-                <Card className="p-5 ml-14 border-l-2 border-l-primary/50 border-border/50">
+                <Card className="p-5 border-border/50">
                     <DatadogForm
                         onSubmit={handleDatadogSubmit}
                         onCancel={() => setShowDatadogForm(false)}
@@ -388,7 +399,7 @@ function IntegrationsPageContent() {
 
             {/* Webhook configuration */}
             {integrationStatus.datadog.connected && (
-                <div className="space-y-3 ml-14 pl-5 border-l-2 border-l-primary/50">
+                <Card className="p-5 border-border/50 space-y-3">
                     <div>
                         <p className="text-sm font-medium">Datadog Webhook URL</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
@@ -434,7 +445,7 @@ function IntegrationsPageContent() {
                             <ExternalLink className="h-3 w-3" />
                         </a>
                     </div>
-                </div>
+                </Card>
             )}
 
             {/* User API Keys section */}
