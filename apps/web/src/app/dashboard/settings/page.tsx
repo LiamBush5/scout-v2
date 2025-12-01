@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { User, Building2, Calendar, Shield, Loader2 } from 'lucide-react'
+import { ROUTES } from '@/lib/constants'
 
 interface UserProfile {
   id: string
@@ -112,7 +113,7 @@ export default function SettingsPage() {
   const handleSignOut = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push('/login')
+    router.push(ROUTES.HOME)
   }
 
   const formatDate = (dateString: string) => {

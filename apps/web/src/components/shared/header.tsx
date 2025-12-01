@@ -27,7 +27,7 @@ export function Header() {
 
   const handleSignOut = async () => {
     await signOut()
-    router.push(ROUTES.LOGIN)
+    router.push(ROUTES.HOME)
   }
 
   return (

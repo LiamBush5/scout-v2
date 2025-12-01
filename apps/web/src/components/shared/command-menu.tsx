@@ -68,7 +68,7 @@ export function CommandMenu() {
   const handleSignOut = useCallback(async () => {
     setOpen(false)
     await signOut()
-    router.push(ROUTES.LOGIN)
+    router.push(ROUTES.HOME)
   }, [signOut, router])
 
   // Navigation items

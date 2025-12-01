@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,18 +18,25 @@ export default function ChatPage() {
     const [input, setInput] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [threadId, setThreadId] = useState<string | null>(null)
+    const [streamingContent, setStreamingContent] = useState('')
     const messagesEndRef = useRef<HTMLDivElement>(null)
+    const abortControllerRef = useRef<AbortController | null>(null)
 
-    const scrollToBottom = () => {
+    const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
+    }, [])
 
     useEffect(() => {
         scrollToBottom()
-    }, [messages])
+    }, [messages, streamingContent, scrollToBottom])
 
     const sendMessage = async () => {
         if (!input.trim() || isLoading) return
+
+        // Cancel any existing request
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+        }
 
         const userMessage: Message = {
             id: crypto.randomUUID(),
@@ -41,6 +48,10 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, userMessage])
         setInput('')
         setIsLoading(true)
+        setStreamingContent('')
+
+        const abortController = new AbortController()
+        abortControllerRef.current = abortController
 
         try {
             const response = await fetch('/api/agent/chat', {
@@ -50,39 +61,116 @@ export default function ChatPage() {
                     message: userMessage.content,
                     threadId,
                 }),
+                signal: abortController.signal,
             })
 
-            const data = await response.json()
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`)
+            }
 
-            if (data.success) {
-                setThreadId(data.threadId)
-                
-                const assistantMessage: Message = {
-                    id: crypto.randomUUID(),
-                    role: 'assistant',
-                    content: data.response,
-                    timestamp: new Date(),
+            // Check if it's a streaming response (SSE)
+            const contentType = response.headers.get('content-type')
+
+            if (contentType?.includes('text/event-stream')) {
+                // Handle SSE streaming
+                const reader = response.body?.getReader()
+                const decoder = new TextDecoder()
+                let accumulatedContent = ''
+
+                if (!reader) {
+                    throw new Error('No response body')
                 }
-                setMessages((prev) => [...prev, assistantMessage])
+
+                while (true) {
+                    const { done, value } = await reader.read()
+
+                    if (done) break
+
+                    const text = decoder.decode(value, { stream: true })
+                    const lines = text.split('\n')
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6))
+
+                                if (data.type === 'token') {
+                                    accumulatedContent += data.content
+                                    setStreamingContent(accumulatedContent)
+                                } else if (data.type === 'done') {
+                                    // Stream complete, add the full message
+                                    if (accumulatedContent) {
+                                        const assistantMessage: Message = {
+                                            id: crypto.randomUUID(),
+                                            role: 'assistant',
+                                            content: accumulatedContent,
+                                            timestamp: new Date(),
+                                        }
+                                        setMessages((prev) => [...prev, assistantMessage])
+                                    }
+                                    setThreadId(data.threadId)
+                                    setStreamingContent('')
+                                } else if (data.type === 'error') {
+                                    throw new Error(data.error)
+                                }
+                            } catch (parseError) {
+                                // Ignore parse errors for incomplete chunks
+                                if (line.slice(6).trim()) {
+                                    console.warn('Failed to parse SSE data:', line)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If we accumulated content but didn't get a done event
+                if (accumulatedContent && !messages.some(m => m.content === accumulatedContent)) {
+                    const assistantMessage: Message = {
+                        id: crypto.randomUUID(),
+                        role: 'assistant',
+                        content: accumulatedContent,
+                        timestamp: new Date(),
+                    }
+                    setMessages((prev) => [...prev, assistantMessage])
+                    setStreamingContent('')
+                }
             } else {
-                const errorMessage: Message = {
-                    id: crypto.randomUUID(),
-                    role: 'assistant',
-                    content: `Error: ${data.error || 'Something went wrong'}`,
-                    timestamp: new Date(),
+                // Handle non-streaming JSON response (fallback)
+                const data = await response.json()
+
+                if (data.success) {
+                    setThreadId(data.threadId)
+
+                    const assistantMessage: Message = {
+                        id: crypto.randomUUID(),
+                        role: 'assistant',
+                        content: data.response,
+                        timestamp: new Date(),
+                    }
+                    setMessages((prev) => [...prev, assistantMessage])
+                } else {
+                    throw new Error(data.error || 'Something went wrong')
                 }
-                setMessages((prev) => [...prev, errorMessage])
             }
         } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                // Request was cancelled, don't show error
+                return
+            }
+
             const errorMessage: Message = {
                 id: crypto.randomUUID(),
                 role: 'assistant',
-                content: 'Failed to connect to the agent. Make sure it is running.',
+                content: error instanceof Error
+                    ? `Error: ${error.message}`
+                    : 'Failed to connect to the agent. Make sure it is running.',
                 timestamp: new Date(),
             }
             setMessages((prev) => [...prev, errorMessage])
+            setStreamingContent('')
         } finally {
             setIsLoading(false)
+            abortControllerRef.current = null
         }
     }
 
@@ -109,9 +197,9 @@ export default function ChatPage() {
                         SRE Investigation Agent
                     </CardTitle>
                 </CardHeader>
-                
+
                 <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {messages.length === 0 && (
+                    {messages.length === 0 && !streamingContent && (
                         <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
                             <Bot className="h-12 w-12 mb-4 opacity-50" />
                             <p className="text-lg font-medium">Start a conversation</p>
@@ -151,7 +239,7 @@ export default function ChatPage() {
                                     <Bot className="h-4 w-4 text-primary" />
                                 </div>
                             )}
-                            
+
                             <div
                                 className={`max-w-[80%] rounded-lg px-4 py-2 ${
                                     message.role === 'user'
@@ -173,7 +261,21 @@ export default function ChatPage() {
                         </div>
                     ))}
 
-                    {isLoading && (
+                    {/* Streaming message */}
+                    {streamingContent && (
+                        <div className="flex gap-3 justify-start">
+                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                <Bot className="h-4 w-4 text-primary" />
+                            </div>
+                            <div className="max-w-[80%] rounded-lg px-4 py-2 bg-muted">
+                                <p className="whitespace-pre-wrap">{streamingContent}</p>
+                                <span className="inline-block w-2 h-4 bg-primary/50 animate-pulse ml-0.5" />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Loading indicator when waiting for stream to start */}
+                    {isLoading && !streamingContent && (
                         <div className="flex gap-3 justify-start">
                             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                                 <Bot className="h-4 w-4 text-primary" />
@@ -210,4 +312,3 @@ export default function ChatPage() {
         </div>
     )
 }
-

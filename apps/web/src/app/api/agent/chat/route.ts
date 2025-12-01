@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { Client } from '@langchain/langgraph-sdk'
 import { z } from 'zod'
 
 const chatRequestSchema = z.object({
@@ -9,9 +10,9 @@ const chatRequestSchema = z.object({
 export const maxDuration = 60
 
 /**
- * Chat with the SRE agent
+ * Chat with the SRE agent using streaming
  *
- * This endpoint allows you to ask questions to the agent directly.
+ * This endpoint allows you to ask questions to the agent directly with streaming responses.
  */
 export async function POST(request: NextRequest) {
     const requestId = crypto.randomUUID()
@@ -21,92 +22,112 @@ export async function POST(request: NextRequest) {
         const { message, threadId } = chatRequestSchema.parse(body)
 
         const agentUrl = process.env.AGENT_API_URL || 'http://127.0.0.1:2024'
+        const client = new Client({ apiUrl: agentUrl })
 
         const currentThreadId = threadId || requestId
 
-        // Call the agent using the synchronous /runs/wait endpoint
-        const agentResponse = await fetch(`${agentUrl}/runs/wait`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
+        // Create or get thread
+        let thread
+        if (threadId) {
+            try {
+                thread = await client.threads.get(threadId)
+            } catch {
+                // Thread doesn't exist, create new one
+                thread = await client.threads.create()
+            }
+        } else {
+            thread = await client.threads.create()
+        }
+
+        const assistantId = 'investigation'
+
+        // Create a readable stream for the response
+        const encoder = new TextEncoder()
+        const stream = new ReadableStream({
+            async start(controller) {
+                try {
+                    // Stream the response using messages-tuple mode for token-by-token streaming
+                    const streamResponse = client.runs.stream(
+                        thread.thread_id,
+                        assistantId,
+                        {
+                            input: {
+                                messages: [{ role: 'human', content: message }],
+                                investigation_id: currentThreadId,
+                                org_id: 'chat',
+                                alert_context: {
+                                    alert_name: 'Chat Query',
+                                    service: 'chat',
+                                    severity: 'info',
+                                    message: message,
+                                },
+                                phase: 'triage',
+                                iteration: 0,
+                                max_iterations: 5,
+                                recent_deployments: [],
+                                affected_services: [],
+                                started_at: new Date().toISOString(),
+                            },
+                            streamMode: 'messages-tuple',
+                        }
+                    )
+
+                    for await (const chunk of streamResponse) {
+                        // Only process message events
+                        if (chunk.event === 'messages') {
+                            const [messageChunk] = chunk.data as [{ content?: string; role?: string }, unknown]
+
+                            // Only stream assistant content (not tool calls)
+                            if (messageChunk?.content && typeof messageChunk.content === 'string') {
+                                const data = JSON.stringify({
+                                    type: 'token',
+                                    content: messageChunk.content,
+                                })
+                                controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+                            }
+                        }
+                    }
+
+                    // Send completion message
+                    const doneData = JSON.stringify({
+                        type: 'done',
+                        threadId: thread.thread_id,
+                        requestId,
+                    })
+                    controller.enqueue(encoder.encode(`data: ${doneData}\n\n`))
+                    controller.close()
+                } catch (error) {
+                    console.error('Streaming error:', error)
+                    const errorData = JSON.stringify({
+                        type: 'error',
+                        error: error instanceof Error ? error.message : 'Streaming failed',
+                    })
+                    controller.enqueue(encoder.encode(`data: ${errorData}\n\n`))
+                    controller.close()
+                }
             },
-            body: JSON.stringify({
-                assistant_id: 'investigation',
-                input: {
-                    messages: [{ role: 'human', content: message }],
-                    investigation_id: currentThreadId,
-                    org_id: 'chat',
-                    alert_context: {
-                        alert_name: 'Chat Query',
-                        service: 'chat',
-                        severity: 'info',
-                        message: message,
-                    },
-                    phase: 'triage',
-                    iteration: 0,
-                    max_iterations: 5,
-                    recent_deployments: [],
-                    affected_services: [],
-                    started_at: new Date().toISOString(),
-                },
-                config: {
-                    configurable: {
-                        thread_id: currentThreadId,
-                    },
-                },
-            }),
         })
 
-        if (!agentResponse.ok) {
-            const errorText = await agentResponse.text()
-            console.error('Agent error:', errorText)
-            throw new Error(`Agent API error: ${agentResponse.status} - ${errorText}`)
-        }
-
-        const result = await agentResponse.json()
-        console.log('Agent result:', JSON.stringify(result, null, 2))
-
-        // Extract the assistant's response from the final state
-        let response = 'I was unable to process your request.'
-
-        // The result contains the final state values
-        const messages = result.messages || result.values?.messages || []
-
-        for (let i = messages.length - 1; i >= 0; i--) {
-            const msg = messages[i]
-            // Check for AI message
-            if (msg.type === 'ai' || msg.role === 'assistant' || (msg.content && !msg.tool_calls?.length)) {
-                const content = typeof msg.content === 'string' ? msg.content : msg.content?.[0]?.text
-                if (content && content.length > 0) {
-                    response = content
-                    break
-                }
-            }
-        }
-
-        // Fallback to checking other fields
-        if (response === 'I was unable to process your request.') {
-            if (result.summary) response = result.summary
-            else if (result.output) response = typeof result.output === 'string' ? result.output : JSON.stringify(result.output)
-        }
-
-        return NextResponse.json({
-            success: true,
-            response,
-            threadId: currentThreadId,
-            requestId,
+        return new Response(stream, {
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
         })
     } catch (error) {
         console.error('Chat error:', error)
 
-        return NextResponse.json(
-            {
+        return new Response(
+            JSON.stringify({
                 success: false,
                 error: error instanceof Error ? error.message : 'Chat failed',
                 requestId,
-            },
-            { status: 500 }
+            }),
+            {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+            }
         )
     }
 }
-
