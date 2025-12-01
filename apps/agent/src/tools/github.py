@@ -56,7 +56,10 @@ def create_github_tools(credentials: dict | None) -> list:
             cutoff = datetime.utcnow() - timedelta(hours=hours_back)
 
             deployments = []
-            for deploy in repository.get_deployments(environment=environment):
+            # PyGithub doesn't accept None for environment, use NotSet
+            from github import GithubObject
+            env_param = environment if environment else GithubObject.NotSet
+            for deploy in repository.get_deployments(environment=env_param):
                 created = deploy.created_at.replace(tzinfo=None)
                 if created < cutoff:
                     break
@@ -93,7 +96,8 @@ def create_github_tools(credentials: dict | None) -> list:
                 "deployments": deployments[:10],
             }, indent=2)
         except Exception as e:
-            return json.dumps({"success": False, "error": str(e)})
+            error_msg = str(e) if str(e) and str(e) != "None" else repr(e)
+            return json.dumps({"success": False, "error": error_msg})
 
     # -------------------------------------------------------------------------
     # get_deployment_commits
@@ -135,30 +139,32 @@ def create_github_tools(credentials: dict | None) -> list:
                     "sha": c.sha[:7],
                     "message": c.commit.message.split('\n')[0][:80],
                     "author": c.commit.author.name if c.commit.author else None,
-                } for c in comparison.commits[:20]]
+                } for c in list(comparison.commits)[:20]]
 
+                files_list = list(comparison.files)[:20]
                 files = [{
                     "filename": f.filename,
                     "status": f.status,
                     "changes": f.changes,
-                } for f in comparison.files[:20]]
+                } for f in files_list]
 
                 high_risk = [f["filename"] for f in files if _is_high_risk(f["filename"])]
 
                 return json.dumps({
                     "success": True,
                     "commits": commits,
-                    "files_changed": len(comparison.files),
+                    "files_changed": len(files_list),
                     "high_risk_files": high_risk[:5],
                     "sample_files": files[:10],
                 }, indent=2)
             else:
                 commit = repository.get_commit(sha)
+                files_list = list(commit.files)[:20] if commit.files else []
                 files = [{
                     "filename": f.filename,
                     "status": f.status,
                     "changes": f.changes,
-                } for f in (commit.files or [])[:20]]
+                } for f in files_list]
 
                 high_risk = [f["filename"] for f in files if _is_high_risk(f["filename"])]
 
@@ -167,7 +173,7 @@ def create_github_tools(credentials: dict | None) -> list:
                     "sha": sha[:7],
                     "message": commit.commit.message.split('\n')[0],
                     "author": commit.commit.author.name if commit.commit.author else None,
-                    "files_changed": len(commit.files) if commit.files else 0,
+                    "files_changed": len(files_list),
                     "high_risk_files": high_risk[:5],
                     "sample_files": files[:10],
                 }, indent=2)

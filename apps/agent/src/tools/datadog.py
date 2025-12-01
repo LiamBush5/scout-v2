@@ -350,11 +350,18 @@ def create_datadog_tools(credentials: dict | None) -> list:
                 now = int(datetime.now().timestamp())
                 start = now - (hours_back * 3600)
 
-                response = api.list_events(
-                    start=start,
-                    end=now,
-                    tags=",".join(tags) if tags else "",
-                )
+                # Only pass tags parameter if we have tags (empty string causes 500 error)
+                if tags:
+                    response = api.list_events(
+                        start=start,
+                        end=now,
+                        tags=",".join(tags),
+                    )
+                else:
+                    response = api.list_events(
+                        start=start,
+                        end=now,
+                    )
 
                 events = []
                 deployments = []
