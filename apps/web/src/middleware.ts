@@ -9,8 +9,9 @@ export async function middleware(request: NextRequest) {
   // DEV MODE: Bypass authentication entirely
   const bypassAuth = process.env.BYPASS_AUTH === 'true'
   if (bypassAuth) {
+    // Landing page is always public
     if (request.nextUrl.pathname === '/') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      return response
     }
     if (['/login', '/signup'].includes(request.nextUrl.pathname)) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
@@ -20,9 +21,9 @@ export async function middleware(request: NextRequest) {
 
   // Skip auth check if Supabase isn't configured
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    // In development without Supabase, redirect root to dashboard
+    // Landing page is always public
     if (request.nextUrl.pathname === '/') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      return response
     }
     return response
   }
@@ -64,17 +65,13 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    // For public pages, continue without auth
-    if (request.nextUrl.pathname === '/') {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-
+    // For public pages (landing, login, signup), continue without auth
     return response
   }
 
-  // Redirect root to appropriate page
+  // Landing page is public - let it through
   if (request.nextUrl.pathname === '/') {
-    return NextResponse.redirect(new URL(user ? '/dashboard' : '/login', request.url))
+    return response
   }
 
   // Protected routes
