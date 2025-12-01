@@ -354,9 +354,14 @@ Report each metric as a finding with type "info", including the metric name and 
 }
 
 /**
- * Cron endpoint - runs every minute, checks for pending jobs
+ * Cron endpoint - runs every minute, dispatches pending jobs
  *
- * Vercel Cron hits this endpoint based on vercel.json configuration
+ * This is a "fan-out" pattern:
+ * 1. Get all pending jobs
+ * 2. Dispatch each job async (fire-and-forget)
+ * 3. Each job runs independently in parallel
+ *
+ * This scales to 100s of users because we don't wait for jobs to complete.
  */
 export async function GET(request: NextRequest) {
     // Verify this is a legitimate cron request
@@ -372,7 +377,7 @@ export async function GET(request: NextRequest) {
     const supabaseAdmin = getSupabaseAdmin()
 
     try {
-        // Get pending jobs
+        // Get pending jobs (limit to 50 per cron to avoid overwhelming the system)
         const { data: pendingJobs, error: jobsError } = await supabaseAdmin
             .rpc('get_pending_monitoring_jobs')
 
@@ -388,95 +393,50 @@ export async function GET(request: NextRequest) {
             })
         }
 
-        console.log(`[Cron] Found ${pendingJobs.length} pending jobs`)
+        // Limit jobs per cron invocation to prevent overload
+        const jobsToRun = (pendingJobs as MonitoringJob[]).slice(0, 50)
+        console.log(`[Cron] Found ${pendingJobs.length} pending jobs, dispatching ${jobsToRun.length}`)
 
-        const results = []
+        const dispatched = []
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
-        for (const job of pendingJobs as MonitoringJob[]) {
-            const jobStartTime = Date.now()
-
-            // Create run record
-            const { data: run, error: runError } = await supabaseAdmin
-                .from('monitoring_job_runs')
-                .insert({
-                    job_id: job.id,
-                    org_id: job.org_id,
-                    status: 'running',
-                    started_at: new Date().toISOString(),
-                })
-                .select()
-                .single()
-
-            if (runError || !run) {
-                console.error(`Failed to create run for job ${job.id}:`, runError)
-                continue
-            }
-
+        // Dispatch jobs in parallel (fire-and-forget)
+        const dispatchPromises = jobsToRun.map(async (job) => {
             try {
-                // Load credentials for this org
-                const credentials = await loadCredentials(job.org_id, supabaseAdmin)
-
-                // Execute the job
-                const result = await executeJob(job, credentials, supabaseAdmin)
-
-                // Update run record
+                // Update next_run_at immediately to prevent double-dispatch
                 await supabaseAdmin
-                    .from('monitoring_job_runs')
+                    .from('monitoring_jobs')
                     .update({
-                        status: result.success ? 'completed' : 'failed',
-                        summary: result.summary,
-                        findings: result.findings,
-                        alert_sent: result.alertSent,
-                        completed_at: new Date().toISOString(),
-                        duration_ms: Date.now() - jobStartTime,
+                        next_run_at: new Date(Date.now() + job.schedule_interval * 60 * 1000).toISOString()
                     })
-                    .eq('id', run.id)
+                    .eq('id', job.id)
 
-                // Update job tracking
-                await supabaseAdmin.rpc('update_job_after_run', {
-                    p_job_id: job.id,
-                    p_success: result.success,
+                // Fire-and-forget: trigger the job endpoint
+                // We don't await the full execution, just the dispatch
+                fetch(`${baseUrl}/api/monitoring-jobs/${job.id}/run`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Pass internal auth so the endpoint knows it's from cron
+                        'x-cron-secret': process.env.CRON_SECRET || '',
+                    },
+                }).catch(err => {
+                    console.error(`[Cron] Failed to dispatch job ${job.id}:`, err)
                 })
 
-                results.push({
-                    job_id: job.id,
-                    job_name: job.name,
-                    success: result.success,
-                    duration_ms: Date.now() - jobStartTime,
-                })
-
-                console.log(`[Cron] Job ${job.name} completed: ${result.success ? 'success' : 'failed'}`)
-
+                return { job_id: job.id, job_name: job.name, dispatched: true }
             } catch (error) {
-                // Update run as failed
-                await supabaseAdmin
-                    .from('monitoring_job_runs')
-                    .update({
-                        status: 'failed',
-                        error_message: error instanceof Error ? error.message : 'Unknown error',
-                        completed_at: new Date().toISOString(),
-                        duration_ms: Date.now() - jobStartTime,
-                    })
-                    .eq('id', run.id)
-
-                await supabaseAdmin.rpc('update_job_after_run', {
-                    p_job_id: job.id,
-                    p_success: false,
-                })
-
-                results.push({
-                    job_id: job.id,
-                    job_name: job.name,
-                    success: false,
-                    error: error instanceof Error ? error.message : 'Unknown error',
-                })
-
-                console.error(`[Cron] Job ${job.name} failed:`, error)
+                console.error(`[Cron] Failed to dispatch job ${job.id}:`, error)
+                return { job_id: job.id, job_name: job.name, dispatched: false, error: String(error) }
             }
-        }
+        })
+
+        const results = await Promise.all(dispatchPromises)
 
         return NextResponse.json({
-            message: `Processed ${results.length} jobs`,
+            message: `Dispatched ${results.filter(r => r.dispatched).length} jobs`,
+            total_pending: pendingJobs.length,
+            dispatched: results.filter(r => r.dispatched).length,
             results,
             duration_ms: Date.now() - startTime,
         })
