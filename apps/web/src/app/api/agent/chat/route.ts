@@ -180,6 +180,13 @@ export async function POST(request: NextRequest) {
                 // Load credentials for this org
                 const supabaseAdmin = getSupabaseAdmin()
                 credentials = await loadCredentials(orgId, supabaseAdmin)
+
+                // Debug: log which credentials were loaded
+                console.log('[Chat API] Loaded credentials for org:', orgId, {
+                    hasDatadog: !!credentials.datadog,
+                    hasGithub: !!credentials.github,
+                    hasSlack: !!credentials.slack,
+                })
             }
         }
 
