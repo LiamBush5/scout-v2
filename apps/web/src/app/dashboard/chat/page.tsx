@@ -283,7 +283,9 @@ export default function ChatPage() {
                                 <Bot className="h-4 w-4 text-primary" />
                             </div>
                             <div className="max-w-[80%] rounded-lg px-4 py-2 bg-muted">
-                                <p className="whitespace-pre-wrap">{streamingContent}</p>
+                                <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-pre:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:my-2">
+                                    <ReactMarkdown>{streamingContent}</ReactMarkdown>
+                                </div>
                                 <span className="inline-block w-2 h-4 bg-primary/50 animate-pulse ml-0.5" />
                             </div>
                         </div>
