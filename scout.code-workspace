@@ -1,31 +1,11 @@
 {
   "folders": [
     {
-      "name": "scout-web",
-      "path": "apps/web"
-    },
-    {
-      "name": "scout-agent",
-      "path": "apps/agent"
-    },
-    {
-      "name": "sre-agent",
-      "path": "sre-agent"
-    },
-    {
-      "name": "supabase",
-      "path": "supabase"
-    },
-    {
-      "name": "docs",
-      "path": "docs"
-    },
-    {
       "name": "mock-triage",
       "path": "../mock-triage"
     },
     {
-      "name": "root",
+      "name": "scout",
       "path": "."
     }
   ],
