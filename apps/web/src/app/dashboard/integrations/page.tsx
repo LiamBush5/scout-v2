@@ -27,9 +27,9 @@ import {
     Copy,
     CheckCircle2,
     ExternalLink,
-    Plus,
-    Key,
     Github,
+    Loader2,
+    XCircle,
 } from 'lucide-react'
 
 /**
@@ -65,6 +65,7 @@ function IntegrationsPageContent() {
     const [disconnectingProvider, setDisconnectingProvider] = useState<IntegrationProvider | null>(null)
     const [webhookCopied, setWebhookCopied] = useState(false)
     const [showDatadogForm, setShowDatadogForm] = useState(false)
+    const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
 
     const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://sre-agent.vercel.app'}/api/webhooks/datadog`
 
@@ -470,55 +471,58 @@ function IntegrationsPageContent() {
                         </div>
                     </div>
                     <div className="space-y-3 pt-2 border-t border-border/50">
-                        <p className="text-xs font-medium text-muted-foreground">Step 2: Create a Test Monitor</p>
-                        <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-                            <li>In Datadog, click <span className="font-medium text-foreground">New Monitor</span> → <span className="font-medium text-foreground">New from JSON</span></li>
-                            <li>Paste the JSON below and click <span className="font-medium text-foreground">Save</span></li>
-                        </ol>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <p className="text-xs text-muted-foreground">Monitor JSON:</p>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-2 text-xs"
-                                    onClick={async () => {
-                                        const monitorJson = JSON.stringify({
-                                            name: "[Scout] Test Monitor",
-                                            type: "metric alert",
-                                            query: "avg(last_5m):avg:system.cpu.user{*} > 101",
-                                            message: "CPU usage is high on {{host.name}}.\n\n@webhook-scout",
-                                            tags: [],
-                                            options: {
-                                                thresholds: { critical: 101 },
-                                                notify_no_data: false,
-                                                renotify_interval: 0
-                                            }
-                                        }, null, 2)
-                                        await navigator.clipboard.writeText(monitorJson)
-                                        toast.success('Monitor JSON copied')
-                                    }}
-                                >
-                                    <Copy className="h-3 w-3 mr-1" />
-                                    Copy
-                                </Button>
-                            </div>
-                            <pre className="text-xs bg-muted/30 p-3 rounded-md overflow-x-auto font-mono text-muted-foreground">{`{
-  "name": "[Scout] Test Monitor",
-  "type": "metric alert",
-  "query": "avg(last_5m):avg:system.cpu.user{*} > 101",
-  "message": "CPU usage is high.\\n\\n@webhook-scout",
-  "tags": [],
-  "options": {
-    "thresholds": { "critical": 101 },
-    "notify_no_data": false,
-    "renotify_interval": 0
-  }
-}`}</pre>
-                        </div>
+                        <p className="text-xs font-medium text-muted-foreground">Step 2: Test the Connection</p>
                         <p className="text-xs text-muted-foreground">
-                            This creates a test monitor with an impossible threshold (CPU &gt; 101%) that won&apos;t trigger on real data.
+                            After creating the webhook, click below to send a test alert and verify everything is working.
                         </p>
+                        <div className="flex items-center gap-3">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs"
+                                disabled={testStatus === 'loading'}
+                                onClick={async () => {
+                                    setTestStatus('loading')
+                                    try {
+                                        const res = await fetch('/api/webhooks/datadog/test', {
+                                            method: 'POST',
+                                        })
+                                        if (res.ok) {
+                                            setTestStatus('success')
+                                            setTimeout(() => setTestStatus('idle'), 3000)
+                                        } else {
+                                            setTestStatus('error')
+                                            setTimeout(() => setTestStatus('idle'), 3000)
+                                        }
+                                    } catch {
+                                        setTestStatus('error')
+                                        setTimeout(() => setTestStatus('idle'), 3000)
+                                    }
+                                }}
+                            >
+                                {testStatus === 'loading' && (
+                                    <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                                )}
+                                {testStatus === 'success' && (
+                                    <CheckCircle2 className="h-3 w-3 mr-1.5 text-green-500" />
+                                )}
+                                {testStatus === 'error' && (
+                                    <XCircle className="h-3 w-3 mr-1.5 text-red-500" />
+                                )}
+                                {testStatus === 'idle' && 'Test Connection'}
+                                {testStatus === 'loading' && 'Testing...'}
+                                {testStatus === 'success' && 'Success!'}
+                                {testStatus === 'error' && 'Failed'}
+                            </Button>
+                            {testStatus === 'success' && (
+                                <a
+                                    href="/dashboard"
+                                    className="text-xs text-primary hover:underline"
+                                >
+                                    View investigation →
+                                </a>
+                            )}
+                        </div>
                     </div>
                     <div className="flex items-center gap-4 pt-1">
                         <a
@@ -551,27 +555,6 @@ function IntegrationsPageContent() {
                     </div>
                 </Card>
             )}
-
-            {/* User API Keys section */}
-            <div className="space-y-3 pt-4">
-                <div>
-                    <h2 className="text-sm font-medium text-muted-foreground">User API Keys</h2>
-                    <p className="text-xs text-muted-foreground mt-1">
-                        User API Keys provide secure, programmatic access to your account.
-                    </p>
-                </div>
-                <Card className="p-8 border-border/50 text-center">
-                    <div className="flex items-center justify-center mb-2">
-                        <Key className="h-5 w-5 text-muted-foreground/50" />
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">No API Keys Yet</p>
-                    <p className="text-xs text-muted-foreground/70 mb-4">No API Keys have been created yet</p>
-                    <Button variant="outline" size="sm" className="h-8 text-xs">
-                        <Plus className="h-3 w-3 mr-1.5" />
-                        New API Key
-                    </Button>
-                </Card>
-            </div>
 
             {/* Disconnect confirmation dialog */}
             <AlertDialog
