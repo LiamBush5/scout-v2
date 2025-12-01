@@ -44,13 +44,6 @@ export function Header() {
 
         {/* Right side */}
         <div className="flex items-center gap-5">
-          <Link
-            href={ROUTES.INVESTIGATIONS}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Agents
-          </Link>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
