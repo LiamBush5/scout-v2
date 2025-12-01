@@ -18,6 +18,8 @@ import {
   Search,
   BookOpen,
   HelpCircle,
+  Brain,
+  Users,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -39,6 +41,7 @@ const PRIMARY_NAV: NavItem[] = [
   { name: 'Overview', href: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { name: 'Investigations', href: ROUTES.INVESTIGATIONS, icon: Search },
   { name: 'Chat', href: '/dashboard/chat', icon: MessageSquare },
+  { name: 'Insights', href: '/dashboard/insights', icon: Brain },
 ]
 
 /**
@@ -52,9 +55,10 @@ const CONFIGURE_NAV: NavItem[] = [
 ]
 
 /**
- * Account navigation - billing and usage
+ * Account navigation - team, billing and usage
  */
 const ACCOUNT_NAV: NavItem[] = [
+  { name: 'Team', href: '/dashboard/team', icon: Users },
   { name: 'Usage', href: '/dashboard/usage', icon: BarChart3 },
   { name: 'Billing', href: '/dashboard/billing', icon: CreditCard },
 ]

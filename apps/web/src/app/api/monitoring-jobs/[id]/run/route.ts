@@ -209,6 +209,7 @@ Always include this JSON block, even if findings is an empty array.`
     }
 
     try {
+        // Start the run
         const response = await fetch(`${agentUrl}/runs`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -252,33 +253,77 @@ Always include this JSON block, even if findings is an empty array.`
             throw new Error(`Agent API error: ${response.status}`)
         }
 
-        const result = await response.json()
+        const runData = await response.json()
+        const agentRunId = runData.run_id
+        const threadId = runData.thread_id
+
+        if (!agentRunId || !threadId) {
+            throw new Error('No run_id or thread_id returned from agent')
+        }
+
+        // Poll for completion (max 5 minutes)
+        const maxWaitTime = 5 * 60 * 1000
+        const pollInterval = 2000
+        const startPollTime = Date.now()
+        let finalOutput = null
+
+        while (Date.now() - startPollTime < maxWaitTime) {
+            await new Promise(resolve => setTimeout(resolve, pollInterval))
+
+            // Check run status
+            const statusResponse = await fetch(`${agentUrl}/runs/${agentRunId}`, {
+                headers: { 'Content-Type': 'application/json' },
+            })
+
+            if (!statusResponse.ok) {
+                continue
+            }
+
+            const statusData = await statusResponse.json()
+
+            if (statusData.status === 'success' || statusData.status === 'error') {
+                // Get the thread state to get messages
+                const stateResponse = await fetch(`${agentUrl}/threads/${threadId}/state`, {
+                    headers: { 'Content-Type': 'application/json' },
+                })
+
+                if (stateResponse.ok) {
+                    const stateData = await stateResponse.json()
+                    finalOutput = stateData.values || stateData
+                }
+                break
+            } else if (statusData.status === 'error' || statusData.status === 'timeout') {
+                throw new Error(`Agent run failed with status: ${statusData.status}`)
+            }
+        }
 
         // Try to extract structured output from the agent's response
         let summary = 'Job completed'
         let findings: unknown[] = []
 
-        // The agent response might have messages array with the final response
-        const messages = result.messages || result.output?.messages || []
-        const lastMessage = messages[messages.length - 1]
-        const responseText = lastMessage?.content || result.output || result.summary || ''
+        if (finalOutput) {
+            // The agent response should have messages array
+            const messages = finalOutput.messages || []
+            // Get the last AI message
+            const aiMessages = messages.filter((m: { type?: string }) => m.type === 'ai' || m.type === 'AIMessage')
+            const lastMessage = aiMessages[aiMessages.length - 1]
+            const responseText = lastMessage?.content || ''
 
-        // Try to extract JSON from the response
-        const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/)
-        if (jsonMatch) {
-            try {
-                const parsed = JSON.parse(jsonMatch[1])
-                summary = parsed.summary || summary
-                findings = parsed.findings || []
-            } catch {
-                // JSON parsing failed, try to extract summary from text
-                summary = responseText.replace(/```json[\s\S]*```/g, '').trim().slice(0, 500) || summary
+            // Try to extract JSON from the response
+            const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/)
+            if (jsonMatch) {
+                try {
+                    const parsed = JSON.parse(jsonMatch[1])
+                    summary = parsed.summary || summary
+                    findings = parsed.findings || []
+                } catch {
+                    // JSON parsing failed, try to extract summary from text
+                    summary = responseText.replace(/```json[\s\S]*```/g, '').trim().slice(0, 500) || summary
+                }
+            } else if (typeof responseText === 'string' && responseText.length > 0) {
+                // No JSON block, use the text as summary
+                summary = responseText.slice(0, 500)
             }
-        } else {
-            // No JSON block, use the text as summary
-            summary = typeof responseText === 'string'
-                ? responseText.slice(0, 500)
-                : 'Job completed'
         }
 
         await supabaseAdmin
