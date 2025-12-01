@@ -425,42 +425,40 @@ function IntegrationsPageContent() {
                             )}
                         </Button>
                     </div>
-                    <div className="space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground">Setup Instructions</p>
+                    <div className="space-y-3">
+                        <p className="text-xs font-medium text-muted-foreground">Step 1: Create the Webhook</p>
                         <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-                            <li>Click the link below, then click the <span className="font-medium text-foreground">Webhooks</span> tile</li>
+                            <li>Go to <a href="https://app.datadoghq.com/integrations?search=webhooks" target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">Integrations → Webhooks</a> and click the <span className="font-medium text-foreground">Webhooks</span> tile</li>
                             <li>Go to the <span className="font-medium text-foreground">Configure</span> tab and click <span className="font-medium text-foreground">+ New</span></li>
                             <li>Enter <span className="font-mono bg-muted/50 px-1 rounded">scout</span> as the Name and paste the URL above</li>
                             <li>Replace the Payload with the template below and click <span className="font-medium text-foreground">Save</span></li>
-                            <li>In any monitor, add <span className="font-mono bg-muted/50 px-1 rounded">@webhook-scout</span> to the notification message</li>
                         </ol>
-                    </div>
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                            <p className="text-xs font-medium text-muted-foreground">Payload Template</p>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 px-2 text-xs"
-                                onClick={async () => {
-                                    const payload = JSON.stringify({
-                                        alert_id: "$ALERT_ID",
-                                        alert_title: "$ALERT_TITLE",
-                                        alert_transition: "$ALERT_TRANSITION",
-                                        body: "$EVENT_MSG",
-                                        tags: "$TAGS",
-                                        link: "$LINK",
-                                        priority: "$PRIORITY"
-                                    }, null, 4)
-                                    await navigator.clipboard.writeText(payload)
-                                    toast.success('Payload copied')
-                                }}
-                            >
-                                <Copy className="h-3 w-3 mr-1" />
-                                Copy
-                            </Button>
-                        </div>
-                        <pre className="text-xs bg-muted/30 p-3 rounded-md overflow-x-auto font-mono text-muted-foreground">{`{
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs text-muted-foreground">Webhook Payload:</p>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={async () => {
+                                        const payload = JSON.stringify({
+                                            alert_id: "$ALERT_ID",
+                                            alert_title: "$ALERT_TITLE",
+                                            alert_transition: "$ALERT_TRANSITION",
+                                            body: "$EVENT_MSG",
+                                            tags: "$TAGS",
+                                            link: "$LINK",
+                                            priority: "$PRIORITY"
+                                        }, null, 4)
+                                        await navigator.clipboard.writeText(payload)
+                                        toast.success('Payload copied')
+                                    }}
+                                >
+                                    <Copy className="h-3 w-3 mr-1" />
+                                    Copy
+                                </Button>
+                            </div>
+                            <pre className="text-xs bg-muted/30 p-3 rounded-md overflow-x-auto font-mono text-muted-foreground">{`{
     "alert_id": "$ALERT_ID",
     "alert_title": "$ALERT_TITLE",
     "alert_transition": "$ALERT_TRANSITION",
@@ -469,6 +467,58 @@ function IntegrationsPageContent() {
     "link": "$LINK",
     "priority": "$PRIORITY"
 }`}</pre>
+                        </div>
+                    </div>
+                    <div className="space-y-3 pt-2 border-t border-border/50">
+                        <p className="text-xs font-medium text-muted-foreground">Step 2: Create a Test Monitor</p>
+                        <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
+                            <li>In Datadog, click <span className="font-medium text-foreground">New Monitor</span> → <span className="font-medium text-foreground">New from JSON</span></li>
+                            <li>Paste the JSON below and click <span className="font-medium text-foreground">Save</span></li>
+                        </ol>
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs text-muted-foreground">Monitor JSON:</p>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={async () => {
+                                        const monitorJson = JSON.stringify({
+                                            name: "[Scout] Test Monitor",
+                                            type: "metric alert",
+                                            query: "avg(last_5m):avg:system.cpu.user{*} > 101",
+                                            message: "CPU usage is high on {{host.name}}.\n\n@webhook-scout",
+                                            tags: [],
+                                            options: {
+                                                thresholds: { critical: 101 },
+                                                notify_no_data: false,
+                                                renotify_interval: 0
+                                            }
+                                        }, null, 2)
+                                        await navigator.clipboard.writeText(monitorJson)
+                                        toast.success('Monitor JSON copied')
+                                    }}
+                                >
+                                    <Copy className="h-3 w-3 mr-1" />
+                                    Copy
+                                </Button>
+                            </div>
+                            <pre className="text-xs bg-muted/30 p-3 rounded-md overflow-x-auto font-mono text-muted-foreground">{`{
+  "name": "[Scout] Test Monitor",
+  "type": "metric alert",
+  "query": "avg(last_5m):avg:system.cpu.user{*} > 101",
+  "message": "CPU usage is high.\\n\\n@webhook-scout",
+  "tags": [],
+  "options": {
+    "thresholds": { "critical": 101 },
+    "notify_no_data": false,
+    "renotify_interval": 0
+  }
+}`}</pre>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            This creates a test monitor with an impossible threshold (CPU &gt; 101%) that won&apos;t trigger on real data.
+                        </p>
                     </div>
                     <div className="flex items-center gap-4 pt-1">
                         <a

@@ -13,6 +13,7 @@ dependencies = [
     "datadog-api-client>=2.0.0",
     "PyGithub>=2.0.0",
     "slack-sdk>=3.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

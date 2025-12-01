@@ -88,49 +88,6 @@ function Radar() {
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background">
-      {/* Radar Animation Styles */}
-      <style jsx global>{`
-        @keyframes radar-scan {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes radar-blip {
-          0%, 100% {
-            opacity: 0;
-            transform: scale(0.5);
-          }
-          2% {
-            opacity: 1;
-            transform: scale(1.2);
-          }
-          5% {
-            opacity: 1;
-            transform: scale(1);
-          }
-          15% {
-            opacity: 0.4;
-            transform: scale(1);
-          }
-          30% {
-            opacity: 0;
-            transform: scale(0.8);
-          }
-        }
-
-        .animate-radar-scan {
-          animation: radar-scan 4s linear infinite;
-        }
-
-        .animate-radar-blip {
-          animation: radar-blip 4s ease-in-out infinite;
-        }
-      `}</style>
-
       {/* Navigation - Cursor style */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#0a0a0a]">
         <div className="max-w-7xl mx-auto px-6 h-12 flex items-center justify-center relative">

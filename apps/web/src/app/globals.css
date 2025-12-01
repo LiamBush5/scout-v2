@@ -95,3 +95,44 @@ body {
 ::selection {
   background: hsl(var(--primary) / 0.25);
 }
+
+/* Radar Animation */
+@keyframes radar-scan {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes radar-blip {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  2% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  5% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  15% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+
+.animate-radar-scan {
+  animation: radar-scan 4s linear infinite;
+}
+
+.animate-radar-blip {
+  animation: radar-blip 4s ease-in-out infinite;
+}
