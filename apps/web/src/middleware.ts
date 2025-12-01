@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export default async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: { headers: request.headers },
   })
@@ -69,9 +69,9 @@ export default async function proxy(request: NextRequest) {
     return response
   }
 
-  // Landing page is public - let it through
-  if (request.nextUrl.pathname === '/') {
-    return response
+  // Landing page - redirect logged-in users to dashboard
+  if (request.nextUrl.pathname === '/' && user) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   // Protected routes
