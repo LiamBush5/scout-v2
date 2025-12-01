@@ -45,7 +45,6 @@ export async function POST(request: NextRequest) {
             .from('organizations')
             .update({
                 onboarding_completed: true,
-                onboarding_step: 3, // Setup step completed
                 updated_at: new Date().toISOString(),
             })
             .eq('id', orgId)
