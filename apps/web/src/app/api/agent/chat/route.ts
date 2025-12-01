@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { Client } from '@langchain/langgraph-sdk'
+import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 
 const chatRequestSchema = z.object({
     message: z.string().min(1),
@@ -8,6 +10,142 @@ const chatRequestSchema = z.object({
 })
 
 export const maxDuration = 60
+
+// Types for credentials
+interface DatadogCredentials {
+    apiKey: string
+    appKey: string
+    site: string
+}
+
+interface GitHubCredentials {
+    appId: string
+    privateKey: string
+    installationId: number
+}
+
+interface SlackCredentials {
+    botToken: string
+    defaultChannelId: string
+}
+
+interface Credentials {
+    datadog?: DatadogCredentials
+    github?: GitHubCredentials
+    slack?: SlackCredentials
+}
+
+function getSupabaseAdmin() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false,
+            },
+        }
+    )
+}
+
+/**
+ * Load encrypted credentials from Supabase Vault
+ */
+async function loadCredentials(
+    orgId: string,
+    supabaseAdmin: ReturnType<typeof getSupabaseAdmin>
+): Promise<Credentials> {
+    const credentials: Credentials = {}
+
+    // Load all credentials in parallel
+    const [datadogCreds, githubCreds, slackCreds] = await Promise.allSettled([
+        // Datadog credentials
+        Promise.all([
+            supabaseAdmin.rpc('get_integration_secret', {
+                p_org_id: orgId,
+                p_provider: 'datadog',
+                p_secret_type: 'api_key',
+            }),
+            supabaseAdmin.rpc('get_integration_secret', {
+                p_org_id: orgId,
+                p_provider: 'datadog',
+                p_secret_type: 'app_key',
+            }),
+            supabaseAdmin.rpc('get_integration_secret', {
+                p_org_id: orgId,
+                p_provider: 'datadog',
+                p_secret_type: 'site',
+            }),
+        ]),
+        // GitHub credentials
+        Promise.all([
+            supabaseAdmin.rpc('get_integration_secret', {
+                p_org_id: orgId,
+                p_provider: 'github',
+                p_secret_type: 'installation_id',
+            }),
+        ]),
+        // Slack credentials
+        Promise.all([
+            supabaseAdmin.rpc('get_integration_secret', {
+                p_org_id: orgId,
+                p_provider: 'slack',
+                p_secret_type: 'bot_token',
+            }),
+            supabaseAdmin.rpc('get_integration_secret', {
+                p_org_id: orgId,
+                p_provider: 'slack',
+                p_secret_type: 'channel_id',
+            }),
+        ]),
+    ])
+
+    // Process Datadog credentials
+    if (datadogCreds.status === 'fulfilled') {
+        const [apiKeyRes, appKeyRes, siteRes] = datadogCreds.value
+        const apiKey = apiKeyRes?.data as string | null
+        const appKey = appKeyRes?.data as string | null
+        const site = siteRes?.data as string | null
+        if (apiKey && appKey) {
+            credentials.datadog = {
+                apiKey,
+                appKey,
+                site: site || 'datadoghq.com',
+            }
+        }
+    }
+
+    // Process GitHub credentials
+    if (githubCreds.status === 'fulfilled') {
+        const [installationIdRes] = githubCreds.value
+        const installationId = installationIdRes?.data as string | null
+        const appId = process.env.GITHUB_APP_ID
+        const privateKey = process.env.GITHUB_PRIVATE_KEY
+
+        if (installationId && appId && privateKey) {
+            credentials.github = {
+                appId,
+                privateKey: privateKey.replace(/\\n/g, '\n'),
+                installationId: parseInt(installationId, 10),
+            }
+        }
+    }
+
+    // Process Slack credentials
+    if (slackCreds.status === 'fulfilled') {
+        const [botTokenRes, channelIdRes] = slackCreds.value
+        const botToken = botTokenRes?.data as string | null
+        const channelId = channelIdRes?.data as string | null
+        if (botToken && channelId) {
+            credentials.slack = {
+                botToken,
+                defaultChannelId: channelId,
+            }
+        }
+    }
+
+    return credentials
+}
 
 /**
  * Chat with the SRE agent using streaming
@@ -20,6 +158,30 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json()
         const { message, threadId } = chatRequestSchema.parse(body)
+
+        // Get the current user's org
+        const supabase = await createServerClient()
+        const { data: { user } } = await supabase.auth.getUser()
+
+        let orgId: string | null = null
+        let credentials: Credentials = {}
+
+        if (user) {
+            // Get user's current org
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('current_org_id')
+                .eq('id', user.id)
+                .single()
+
+            if (profile?.current_org_id) {
+                orgId = profile.current_org_id
+
+                // Load credentials for this org
+                const supabaseAdmin = getSupabaseAdmin()
+                credentials = await loadCredentials(orgId, supabaseAdmin)
+            }
+        }
 
         const agentUrl = process.env.AGENT_API_URL || 'http://127.0.0.1:2024'
         const client = new Client({ apiUrl: agentUrl })
@@ -54,13 +216,28 @@ export async function POST(request: NextRequest) {
                             input: {
                                 messages: [{ role: 'human', content: message }],
                                 investigation_id: currentThreadId,
-                                org_id: 'chat',
+                                org_id: orgId || 'chat',
                                 alert_context: {
                                     alert_name: 'Chat Query',
                                     service: 'chat',
                                     severity: 'info',
                                     message: message,
                                 },
+                                // Pass credentials to the agent
+                                datadog_creds: credentials.datadog ? {
+                                    api_key: credentials.datadog.apiKey,
+                                    app_key: credentials.datadog.appKey,
+                                    site: credentials.datadog.site,
+                                } : null,
+                                github_creds: credentials.github ? {
+                                    app_id: credentials.github.appId,
+                                    private_key: credentials.github.privateKey,
+                                    installation_id: credentials.github.installationId,
+                                } : null,
+                                slack_creds: credentials.slack ? {
+                                    bot_token: credentials.slack.botToken,
+                                    channel_id: credentials.slack.defaultChannelId,
+                                } : null,
                                 phase: 'triage',
                                 iteration: 0,
                                 max_iterations: 5,
