@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Send, Bot, User, Loader2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 
 interface Message {
     id: string
@@ -123,15 +124,23 @@ export default function ChatPage() {
                     }
                 }
 
-                // If we accumulated content but didn't get a done event
-                if (accumulatedContent && !messages.some(m => m.content === accumulatedContent)) {
-                    const assistantMessage: Message = {
-                        id: crypto.randomUUID(),
-                        role: 'assistant',
-                        content: accumulatedContent,
-                        timestamp: new Date(),
-                    }
-                    setMessages((prev) => [...prev, assistantMessage])
+                // Fallback: If we accumulated content but didn't get a done event,
+                // add the message. Use the callback form to check current state
+                // and avoid duplicates from the closure stale reference.
+                if (accumulatedContent) {
+                    setMessages((prev) => {
+                        // Check if message was already added by the 'done' event
+                        if (prev.some(m => m.content === accumulatedContent && m.role === 'assistant')) {
+                            return prev
+                        }
+                        const assistantMessage: Message = {
+                            id: crypto.randomUUID(),
+                            role: 'assistant',
+                            content: accumulatedContent,
+                            timestamp: new Date(),
+                        }
+                        return [...prev, assistantMessage]
+                    })
                     setStreamingContent('')
                 }
             } else {
@@ -247,7 +256,13 @@ export default function ChatPage() {
                                         : 'bg-muted'
                                 }`}
                             >
-                                <p className="whitespace-pre-wrap">{message.content}</p>
+                                {message.role === 'assistant' ? (
+                                    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-pre:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:my-2">
+                                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                                    </div>
+                                ) : (
+                                    <p className="whitespace-pre-wrap">{message.content}</p>
+                                )}
                                 <p className="text-xs opacity-60 mt-1">
                                     {message.timestamp.toLocaleTimeString()}
                                 </p>
