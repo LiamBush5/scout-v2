@@ -153,7 +153,13 @@ function NavSection({
  * 4. Support - Settings, docs, help (least frequent)
  */
 export function Sidebar() {
-  const { user } = useUser()
+  const { user, profile } = useUser()
+
+  // Get plan from organization, default to 'free'
+  // Note: plan field exists in DB but may not be in TypeScript types yet
+  const org = profile?.organization as any
+  const plan = org?.plan || 'free'
+  const planDisplay = plan.charAt(0).toUpperCase() + plan.slice(1) + ' Plan'
 
   return (
     <aside className="w-52 flex-shrink-0">
@@ -166,7 +172,7 @@ export function Sidebar() {
           <ExternalLink className="h-3 w-3 text-muted-foreground/60" />
         </div>
         <p className="text-xs text-muted-foreground truncate">
-          Pro Plan · {user?.email || ''}
+          {planDisplay} · {user?.email || ''}
         </p>
       </div>
 

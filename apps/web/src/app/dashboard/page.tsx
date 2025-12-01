@@ -11,7 +11,6 @@ import {
   Zap,
   Activity,
   Clock,
-  ThumbsUp,
   Target,
   TrendingUp,
   TrendingDown,
@@ -24,10 +23,10 @@ import {
   BarChart3,
   History,
   Search,
-  Github,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
+import { DatadogIcon, SlackIcon, GitHubIcon, integrationConfig } from '@/components/icons/integrations'
 
 interface Investigation {
   id: string
@@ -430,48 +429,25 @@ export default function DashboardPage() {
               <Link href="/dashboard/integrations" className="text-xs text-muted-foreground hover:text-primary">Manage</Link>
             </div>
             <div className="space-y-3">
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                <div className="h-8 w-8 rounded-md bg-[#632CA6] flex items-center justify-center">
-                  <svg className="h-5 w-5 text-white" viewBox="0 0 800 800" fill="currentColor">
-                    <path d="M400 0C179.1 0 0 179.1 0 400s179.1 400 400 400 400-179.1 400-400S620.9 0 400 0zm196.7 582.3c-15.2 17.1-37.9 26.5-64 26.5-29.6 0-56.2-12.4-76.6-34.1-10.9 6.2-23.3 10.5-36.7 12.4v.1c0 25.7-20.8 46.5-46.5 46.5s-46.5-20.8-46.5-46.5c0-1.8.1-3.6.3-5.3-60.8-12.4-106.7-66.2-106.7-130.6 0-48.1 25.6-90.2 64-113.5-.6-5.9-.9-11.9-.9-18 0-74.8 53.4-137.2 124-150.9 8.7-43.1 46.7-75.6 92.2-75.6 45.5 0 83.5 32.5 92.2 75.6 70.6 13.7 124 76.1 124 150.9 0 6.1-.3 12.1-.9 18 38.4 23.3 64 65.4 64 113.5 0 51.2-28.8 95.6-71.1 118.1 4.2 12.9 6.5 26.5 6.5 40.6 0 33.5-13.9 63.8-36.3 85.3z"/>
-                  </svg>
+              {(['datadog', 'github', 'slack'] as const).map((provider) => {
+                const config = integrationConfig[provider]
+                const Icon = config.icon
+                const isConnected = integrationStatus(provider)
+                return (
+                  <div key={provider} className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
+                    <div className={cn("h-8 w-8 rounded-md flex items-center justify-center", config.bgColor)}>
+                      <Icon className="text-white" />
                 </div>
                 <div className="flex-1">
-                  <div className="text-sm font-medium">Datadog</div>
-                  <div className="text-xs text-muted-foreground">Alerts & Metrics</div>
+                      <div className="text-sm font-medium">{config.name}</div>
+                      <div className="text-xs text-muted-foreground">{config.description}</div>
                 </div>
-                <Badge variant="outline" className={cn("text-[10px]", integrationStatus('datadog') ? "bg-primary/10 text-primary border-primary/30" : "")}>
-                  {integrationStatus('datadog') ? 'Connected' : 'Setup'}
+                    <Badge variant="outline" className={cn("text-[10px]", isConnected ? "bg-primary/10 text-primary border-primary/30" : "")}>
+                      {isConnected ? 'Connected' : 'Setup'}
                 </Badge>
               </div>
-
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                <div className="h-8 w-8 rounded-md bg-[#1a1a1a] flex items-center justify-center border border-border/50">
-                  <Github className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium">GitHub</div>
-                  <div className="text-xs text-muted-foreground">Deployments & Code</div>
-                </div>
-                <Badge variant="outline" className={cn("text-[10px]", integrationStatus('github') ? "bg-primary/10 text-primary border-primary/30" : "")}>
-                  {integrationStatus('github') ? 'Connected' : 'Setup'}
-                </Badge>
-              </div>
-
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                <div className="h-8 w-8 rounded-md bg-[#4A154B] flex items-center justify-center">
-                  <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium">Slack</div>
-                  <div className="text-xs text-muted-foreground">Notifications</div>
-                </div>
-                <Badge variant="outline" className={cn("text-[10px]", integrationStatus('slack') ? "bg-primary/10 text-primary border-primary/30" : "")}>
-                  {integrationStatus('slack') ? 'Connected' : 'Setup'}
-                </Badge>
-              </div>
+                )
+              })}
             </div>
           </Card>
 

@@ -3,8 +3,6 @@
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -18,19 +16,13 @@ import {
 import { IntegrationCard } from '@/components/onboarding/integration-card'
 import { GitHubSettings } from '@/components/integrations/github-settings'
 import { SlackSettings } from '@/components/integrations/slack-settings'
+import { DatadogSettings } from '@/components/integrations/datadog-settings'
 import { DatadogForm } from '@/components/onboarding/datadog-form'
 import { type DatadogCredentials } from '@/lib/validations/onboarding'
 import { createClient } from '@/lib/supabase/client'
 import { ROUTES } from '@/lib/constants'
 import { toast } from 'sonner'
-import {
-    Copy,
-    CheckCircle2,
-    ExternalLink,
-    Github,
-    Loader2,
-    XCircle,
-} from 'lucide-react'
+import { DatadogIcon, SlackIcon, GitHubIcon } from '@/components/icons/integrations'
 
 /**
  * Integration status type
@@ -63,11 +55,7 @@ function IntegrationsPageContent() {
     const [connectingProvider, setConnectingProvider] = useState<string | null>(null)
     const [managingProvider, setManagingProvider] = useState<IntegrationProvider | null>(null)
     const [disconnectingProvider, setDisconnectingProvider] = useState<IntegrationProvider | null>(null)
-    const [webhookCopied, setWebhookCopied] = useState(false)
     const [showDatadogForm, setShowDatadogForm] = useState(false)
-    const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
-
-    const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://sre-agent.vercel.app'}/api/webhooks/datadog`
 
     // Handle OAuth callbacks from URL params
     useEffect(() => {
@@ -266,14 +254,6 @@ function IntegrationsPageContent() {
         }))
     }
 
-    // Webhook copy handler
-    const handleCopyWebhook = async () => {
-        await navigator.clipboard.writeText(webhookUrl)
-        setWebhookCopied(true)
-        toast.success('Webhook URL copied')
-        setTimeout(() => setWebhookCopied(false), 2000)
-    }
-
     // Get connected account display text
     const getConnectedAccount = (provider: IntegrationProvider): string | undefined => {
         const status = integrationStatus[provider]
@@ -318,7 +298,7 @@ function IntegrationsPageContent() {
                 <div className="rounded-lg border border-border/50 overflow-hidden">
                     <IntegrationCard
                         name="GitHub"
-                        icon={<Github className="h-5 w-5" />}
+                        icon={<GitHubIcon />}
                         description="Connect GitHub for enhanced codebase context and deployment tracking"
                         status={
                             integrationStatus.github.connected
@@ -348,7 +328,7 @@ function IntegrationsPageContent() {
                 <div className="rounded-lg border border-border/50 overflow-hidden">
                     <IntegrationCard
                         name="Slack"
-                        logo="https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png"
+                        icon={<SlackIcon />}
                         description="Receive investigation results and alerts in Slack"
                         status={
                             integrationStatus.slack.connected
@@ -378,14 +358,25 @@ function IntegrationsPageContent() {
                 <div className="rounded-lg border border-border/50 overflow-hidden">
                     <IntegrationCard
                         name="Datadog"
-                        logo="https://imgix.datadoghq.com/img/dd_logo_70x75.png"
+                        icon={<DatadogIcon />}
                         description="Query metrics, logs, and APM data"
                         status={integrationStatus.datadog.connected ? 'connected' : 'disconnected'}
                         connectedAccount={getConnectedAccount('datadog')}
                         onConnect={handleDatadogConnect}
+                        onManage={() => handleManage('datadog')}
                         onDisconnect={() => handleDisconnectClick('datadog')}
+                        isManaging={managingProvider === 'datadog'}
                     />
                 </div>
+
+                {/* Datadog Settings Panel */}
+                {managingProvider === 'datadog' && integrationStatus.datadog.connected && (
+                    <DatadogSettings
+                        metadata={integrationStatus.datadog.metadata || {}}
+                        onUpdate={(metadata) => handleMetadataUpdate('datadog', metadata)}
+                        onClose={() => setManagingProvider(null)}
+                    />
+                )}
             </div>
 
             {/* Inline Datadog form */}
@@ -395,164 +386,6 @@ function IntegrationsPageContent() {
                         onSubmit={handleDatadogSubmit}
                         onCancel={() => setShowDatadogForm(false)}
                     />
-                </Card>
-            )}
-
-            {/* Webhook configuration */}
-            {integrationStatus.datadog.connected && (
-                <Card className="p-5 border-border/50 space-y-4">
-                    <div>
-                        <p className="text-sm font-medium">Datadog Webhook URL</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                            Add this webhook to your Datadog monitors to automatically trigger Scout investigations.
-                        </p>
-                    </div>
-                    <div className="flex gap-2">
-                        <Input
-                            value={webhookUrl}
-                            readOnly
-                            className="h-9 font-mono text-xs bg-muted/30"
-                        />
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={handleCopyWebhook}
-                            className="h-9 w-9 flex-shrink-0"
-                        >
-                            {webhookCopied ? (
-                                <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-                            ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                            )}
-                        </Button>
-                    </div>
-                    <div className="space-y-3">
-                        <p className="text-xs font-medium text-muted-foreground">Step 1: Create the Webhook</p>
-                        <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-                            <li>Go to <a href="https://app.datadoghq.com/integrations?search=webhooks" target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">Integrations → Webhooks</a> and click the <span className="font-medium text-foreground">Webhooks</span> tile</li>
-                            <li>Go to the <span className="font-medium text-foreground">Configure</span> tab and click <span className="font-medium text-foreground">+ New</span></li>
-                            <li>Enter <span className="font-mono bg-muted/50 px-1 rounded">scout</span> as the Name and paste the URL above</li>
-                            <li>Replace the Payload with the template below and click <span className="font-medium text-foreground">Save</span></li>
-                        </ol>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <p className="text-xs text-muted-foreground">Webhook Payload:</p>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-2 text-xs"
-                                    onClick={async () => {
-                                        const payload = JSON.stringify({
-                                            alert_id: "$ALERT_ID",
-                                            alert_title: "$ALERT_TITLE",
-                                            alert_transition: "$ALERT_TRANSITION",
-                                            body: "$EVENT_MSG",
-                                            tags: "$TAGS",
-                                            link: "$LINK",
-                                            priority: "$PRIORITY"
-                                        }, null, 4)
-                                        await navigator.clipboard.writeText(payload)
-                                        toast.success('Payload copied')
-                                    }}
-                                >
-                                    <Copy className="h-3 w-3 mr-1" />
-                                    Copy
-                                </Button>
-                            </div>
-                            <pre className="text-xs bg-muted/30 p-3 rounded-md overflow-x-auto font-mono text-muted-foreground">{`{
-    "alert_id": "$ALERT_ID",
-    "alert_title": "$ALERT_TITLE",
-    "alert_transition": "$ALERT_TRANSITION",
-    "body": "$EVENT_MSG",
-    "tags": "$TAGS",
-    "link": "$LINK",
-    "priority": "$PRIORITY"
-}`}</pre>
-                        </div>
-                    </div>
-                    <div className="space-y-3 pt-2 border-t border-border/50">
-                        <p className="text-xs font-medium text-muted-foreground">Step 2: Test the Connection</p>
-                        <p className="text-xs text-muted-foreground">
-                            After creating the webhook, click below to send a test alert and verify everything is working.
-                        </p>
-                        <div className="flex items-center gap-3">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8 text-xs"
-                                disabled={testStatus === 'loading'}
-                                onClick={async () => {
-                                    setTestStatus('loading')
-                                    try {
-                                        const res = await fetch('/api/webhooks/datadog/test', {
-                                            method: 'POST',
-                                        })
-                                        if (res.ok) {
-                                            setTestStatus('success')
-                                            setTimeout(() => setTestStatus('idle'), 3000)
-                                        } else {
-                                            setTestStatus('error')
-                                            setTimeout(() => setTestStatus('idle'), 3000)
-                                        }
-                                    } catch {
-                                        setTestStatus('error')
-                                        setTimeout(() => setTestStatus('idle'), 3000)
-                                    }
-                                }}
-                            >
-                                {testStatus === 'loading' && (
-                                    <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                                )}
-                                {testStatus === 'success' && (
-                                    <CheckCircle2 className="h-3 w-3 mr-1.5 text-green-500" />
-                                )}
-                                {testStatus === 'error' && (
-                                    <XCircle className="h-3 w-3 mr-1.5 text-red-500" />
-                                )}
-                                {testStatus === 'idle' && 'Test Connection'}
-                                {testStatus === 'loading' && 'Testing...'}
-                                {testStatus === 'success' && 'Success!'}
-                                {testStatus === 'error' && 'Failed'}
-                            </Button>
-                            {testStatus === 'success' && (
-                                <a
-                                    href="/dashboard"
-                                    className="text-xs text-primary hover:underline"
-                                >
-                                    View investigation →
-                                </a>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-4 pt-1">
-                        <a
-                            href="https://app.datadoghq.com/integrations?search=webhooks"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
-                        >
-                            Open Integrations
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
-                        <a
-                            href="https://app.datadoghq.com/monitors/manage"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
-                        >
-                            Manage Monitors
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
-                        <a
-                            href="https://docs.datadoghq.com/integrations/webhooks/"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
-                        >
-                            Documentation
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
-                    </div>
                 </Card>
             )}
 

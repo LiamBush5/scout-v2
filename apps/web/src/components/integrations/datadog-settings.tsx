@@ -16,12 +16,10 @@ import {
 import {
   RefreshCw,
   ExternalLink,
-  ChevronDown,
-  ChevronUp,
-  Settings2,
   CheckCircle2,
   AlertCircle,
-  Copy
+  Copy,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -36,10 +34,10 @@ const DATADOG_SITES = [
 interface DatadogSettingsProps {
   metadata: Record<string, unknown>
   onUpdate: (metadata: Record<string, unknown>) => void
+  onClose?: () => void
 }
 
-export function DatadogSettings({ metadata, onUpdate }: DatadogSettingsProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
+export function DatadogSettings({ metadata, onUpdate, onClose }: DatadogSettingsProps) {
   const [isVerifying, setIsVerifying] = useState(false)
   const [verifyStatus, setVerifyStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [showUpdateForm, setShowUpdateForm] = useState(false)
@@ -120,213 +118,211 @@ export function DatadogSettings({ metadata, onUpdate }: DatadogSettingsProps) {
   }
 
   return (
-    <Card className="p-4 ml-14 border-l-2 border-l-green-500">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between text-left"
-      >
-        <div className="flex items-center gap-2">
-          <Settings2 className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium">Datadog Settings</span>
-        </div>
-        {isExpanded ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+    <Card className="p-5 border-border/50">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-medium">Datadog Settings</h3>
+        {onClose && (
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
         )}
-      </button>
+      </div>
 
-      {isExpanded && (
-        <div className="mt-4 space-y-4">
-          {/* Site info */}
-          <div className="flex items-center justify-between py-2 border-b">
-            <div>
-              <p className="text-sm font-medium">Datadog Site</p>
-              <p className="text-sm text-muted-foreground">{getSiteLabel(site)}</p>
-            </div>
-            <a
-              href={`https://app.${site}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-            >
-              Open Datadog
-              <ExternalLink className="h-3 w-3" />
-            </a>
+      <div className="space-y-5">
+        {/* Site info */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Connected Site</p>
+            <p className="text-sm text-muted-foreground">{getSiteLabel(site)}</p>
           </div>
+          <a
+            href={`https://app.${site}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+          >
+            Open Datadog
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
 
-          {/* Connection status */}
-          <div className="flex items-center justify-between py-2 border-b">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium">Connection Status</p>
-              {verifyStatus === 'success' && (
-                <Badge variant="default" className="bg-green-500">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Verified
-                </Badge>
-              )}
-              {verifyStatus === 'error' && (
-                <Badge variant="destructive">
-                  <AlertCircle className="h-3 w-3 mr-1" />
-                  Failed
-                </Badge>
-              )}
-            </div>
+        {/* Connection status */}
+        <div className="flex items-center justify-between pb-4 border-b border-border/50">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">API Status</p>
+            {verifyStatus === 'success' && (
+              <Badge variant="default" className="bg-green-500 text-[10px]">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Verified
+              </Badge>
+            )}
+            {verifyStatus === 'error' && (
+              <Badge variant="destructive" className="text-[10px]">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Failed
+              </Badge>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleVerifyConnection}
+            disabled={isVerifying}
+            className="h-8 text-xs"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isVerifying ? 'animate-spin' : ''}`} />
+            {isVerifying ? 'Verifying...' : 'Verify'}
+          </Button>
+        </div>
+
+        {/* Webhook URL */}
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium">Webhook URL</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Add this to your Datadog monitors to trigger investigations
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={webhookUrl}
+              readOnly
+              className="h-9 font-mono text-xs bg-muted/30"
+            />
             <Button
               variant="outline"
-              size="sm"
-              onClick={handleVerifyConnection}
-              disabled={isVerifying}
+              size="icon"
+              onClick={handleCopyWebhook}
+              className="h-9 w-9 flex-shrink-0"
             >
-              {isVerifying ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Verifying...
-                </>
+              {webhookCopied ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
               ) : (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Verify
-                </>
+                <Copy className="h-3.5 w-3.5" />
               )}
             </Button>
           </div>
-
-          {/* Webhook URL */}
-          <div className="space-y-2 py-2 border-b">
-            <p className="text-sm font-medium">Webhook URL</p>
-            <p className="text-sm text-muted-foreground">
-              Add this to your Datadog monitors to trigger investigations
-            </p>
-            <div className="flex gap-2">
-              <Input
-                value={webhookUrl}
-                readOnly
-                className="font-mono text-xs"
-              />
-              <Button variant="outline" size="icon" onClick={handleCopyWebhook}>
-                {webhookCopied ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-            <div className="flex gap-4 mt-2">
-              <a
-                href={`https://app.${site}/monitors/manage`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-              >
-                Manage Monitors
-                <ExternalLink className="h-3 w-3" />
-              </a>
-              <a
-                href={`https://app.${site}/integrations/webhooks`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
-              >
-                Webhooks Integration
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-          </div>
-
-          {/* Update credentials */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">API Credentials</p>
-                <p className="text-sm text-muted-foreground">
-                  Update your Datadog API and App keys
-                </p>
-              </div>
-              {!showUpdateForm && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowUpdateForm(true)}
-                >
-                  Update Keys
-                </Button>
-              )}
-            </div>
-
-            {showUpdateForm && (
-              <div className="space-y-3 p-4 bg-muted rounded-lg">
-                <div className="space-y-2">
-                  <Label htmlFor="site">Datadog Site</Label>
-                  <Select value={newSite} onValueChange={setNewSite}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DATADOG_SITES.map((s) => (
-                        <SelectItem key={s.value} value={s.value}>
-                          {s.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="apiKey">API Key</Label>
-                  <Input
-                    id="apiKey"
-                    type="password"
-                    placeholder="Enter new API Key"
-                    value={newApiKey}
-                    onChange={(e) => setNewApiKey(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="appKey">App Key</Label>
-                  <Input
-                    id="appKey"
-                    type="password"
-                    placeholder="Enter new App Key"
-                    value={newAppKey}
-                    onChange={(e) => setNewAppKey(e.target.value)}
-                  />
-                </div>
-
-                <div className="flex gap-2 justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setShowUpdateForm(false)
-                      setNewApiKey('')
-                      setNewAppKey('')
-                      setNewSite(site)
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleUpdateCredentials}
-                    disabled={isUpdating || !newApiKey || !newAppKey}
-                  >
-                    {isUpdating ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Updating...
-                      </>
-                    ) : (
-                      'Update Credentials'
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
+          <div className="flex items-center gap-4">
+            <a
+              href={`https://app.${site}/monitors/manage`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+            >
+              Manage Monitors
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            <a
+              href={`https://app.${site}/integrations/webhooks`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+            >
+              Webhooks Integration
+              <ExternalLink className="h-3 w-3" />
+            </a>
           </div>
         </div>
-      )}
+
+        {/* Update credentials */}
+        <div className="space-y-3 pt-4 border-t border-border/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">API Credentials</p>
+              <p className="text-xs text-muted-foreground">
+                Update your Datadog API and App keys
+              </p>
+            </div>
+            {!showUpdateForm && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowUpdateForm(true)}
+                className="h-8 text-xs"
+              >
+                Update Keys
+              </Button>
+            )}
+          </div>
+
+          {showUpdateForm && (
+            <div className="space-y-3 p-4 bg-muted/30 rounded-lg border border-border/50">
+              <div className="space-y-2">
+                <Label htmlFor="site" className="text-xs">Datadog Site</Label>
+                <Select value={newSite} onValueChange={setNewSite}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATADOG_SITES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="apiKey" className="text-xs">API Key</Label>
+                <Input
+                  id="apiKey"
+                  type="password"
+                  placeholder="Enter new API Key"
+                  value={newApiKey}
+                  onChange={(e) => setNewApiKey(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="appKey" className="text-xs">App Key</Label>
+                <Input
+                  id="appKey"
+                  type="password"
+                  placeholder="Enter new App Key"
+                  value={newAppKey}
+                  onChange={(e) => setNewAppKey(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowUpdateForm(false)
+                    setNewApiKey('')
+                    setNewAppKey('')
+                    setNewSite(site)
+                  }}
+                  className="h-8 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleUpdateCredentials}
+                  disabled={isUpdating || !newApiKey || !newAppKey}
+                  className="h-8 text-xs"
+                >
+                  {isUpdating ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Credentials'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
     </Card>
   )
 }
