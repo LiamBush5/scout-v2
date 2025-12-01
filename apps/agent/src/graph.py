@@ -193,6 +193,18 @@ def create_investigation_graph(
         api_key=OPENROUTER_API_KEY,
     )
 
+    # Load credentials from environment if not provided
+    if datadog_creds is None:
+        dd_api_key = os.getenv("DD_API_KEY")
+        dd_app_key = os.getenv("DD_APP_KEY")
+        dd_site = os.getenv("DD_SITE", "datadoghq.com")
+        if dd_api_key and dd_app_key:
+            datadog_creds = {
+                "api_key": dd_api_key,
+                "app_key": dd_app_key,
+                "site": dd_site,
+            }
+
     # Collect all tools from sub-agents
     all_tools = []
 
