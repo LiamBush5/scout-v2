@@ -73,12 +73,58 @@ export async function POST(request: NextRequest) {
                     )
 
                     for await (const chunk of streamResponse) {
-                        // Only process message events
+                        // Process message events
                         if (chunk.event === 'messages') {
-                            const [messageChunk] = chunk.data as [{ content?: string; role?: string }, unknown]
+                            const [messageChunk, metadata] = chunk.data as [
+                                {
+                                    content?: string
+                                    role?: string
+                                    type?: string
+                                    name?: string
+                                    tool_calls?: Array<{ name: string; args: Record<string, unknown>; id: string }>
+                                },
+                                { langgraph_node?: string }
+                            ]
 
-                            // Only stream assistant content (not tool calls)
-                            if (messageChunk?.content && typeof messageChunk.content === 'string') {
+                            // Send tool calls to the client
+                            if (messageChunk?.tool_calls && messageChunk.tool_calls.length > 0) {
+                                for (const toolCall of messageChunk.tool_calls) {
+                                    const toolData = JSON.stringify({
+                                        type: 'tool_call',
+                                        toolName: toolCall.name,
+                                        toolArgs: toolCall.args,
+                                        toolId: toolCall.id,
+                                    })
+                                    controller.enqueue(encoder.encode(`data: ${toolData}\n\n`))
+                                }
+                            }
+
+                            // Send tool results to the client
+                            if (messageChunk?.type === 'tool' || messageChunk?.name) {
+                                const toolResultData = JSON.stringify({
+                                    type: 'tool_result',
+                                    toolName: messageChunk.name,
+                                    content: messageChunk.content,
+                                })
+                                controller.enqueue(encoder.encode(`data: ${toolResultData}\n\n`))
+                            }
+
+                            // Only stream AI assistant content, not tool calls or tool outputs
+                            // Filter out:
+                            // - Tool messages (type === 'tool' or role === 'tool')
+                            // - Tool call results (content that looks like JSON objects)
+                            // - Messages from tool nodes
+                            if (
+                                messageChunk?.content &&
+                                typeof messageChunk.content === 'string' &&
+                                messageChunk.type !== 'tool' &&
+                                messageChunk.role !== 'tool' &&
+                                !messageChunk.name && // Tool messages have a 'name' field
+                                metadata?.langgraph_node !== 'tools' &&
+                                // Skip content that looks like raw JSON tool output
+                                !messageChunk.content.trim().startsWith('{ "') &&
+                                !messageChunk.content.trim().startsWith('{"')
+                            ) {
                                 const data = JSON.stringify({
                                     type: 'token',
                                     content: messageChunk.content,
