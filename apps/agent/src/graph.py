@@ -27,6 +27,7 @@ from langgraph.prebuilt import create_react_agent
 from src.tools.datadog import create_datadog_tools
 from src.tools.github import create_github_tools
 from src.tools.slack import create_slack_tools
+from src.tools.memory import create_memory_tools
 
 
 # =============================================================================
@@ -49,10 +50,11 @@ Identify root causes of production incidents quickly and provide actionable reco
 
 ## Investigation Methodology
 
-### Phase 1: TRIAGE (30 seconds)
+### Phase 1: TRIAGE + MEMORY CHECK (30 seconds)
 - Understand what the alert is telling us
+- **IMMEDIATELY check incident memory** - Use search_similar_incidents to see if this has happened before
+- If similar past incidents exist, reference what worked (or didn't work) last time
 - Verify if this is a real issue or false positive
-- Identify affected services
 
 ### Phase 2: CHANGE DETECTION (HIGHEST PRIORITY - 60 seconds)
 **MOST INCIDENTS (70-80%) ARE CAUSED BY RECENT CHANGES.**
@@ -72,6 +74,7 @@ Delegate to datadog-agent to test hypotheses:
 
 ### Phase 4: CONCLUSION
 - Synthesize findings from all sub-agents
+- Reference similar past incidents if relevant
 - State root cause with confidence level (High/Medium/Low)
 - Delegate to slack-agent to report findings
 
@@ -94,13 +97,27 @@ You have specialized sub-agents. Use them effectively:
    - Send investigation results
    - Post progress updates
 
+## Incident Memory Tools
+
+You have access to incident memory - USE IT:
+
+- **search_similar_incidents**: Find past incidents for the same service/alert
+- **get_incident_details**: Get full details of a specific past incident
+- **get_service_incident_history**: Understand patterns for a service
+
+When you find similar past incidents:
+- Reference the root cause that was identified
+- Note if the same fix might apply
+- Mention if this is a recurring issue that needs permanent resolution
+
 ## Critical Rules
 
-1. **DELEGATE DON'T DO** - Use sub-agents for specialized tasks
-2. **CHECK DEPLOYMENTS FIRST** - Most incidents are caused by changes
-3. **USE TODOS** - Track your investigation progress
-4. **BE SPECIFIC** - Cite exact values, timestamps, evidence
-5. **PARALLEL EXECUTION** - Spawn multiple sub-agents when tasks are independent
+1. **CHECK MEMORY FIRST** - Always search for similar past incidents
+2. **DELEGATE DON'T DO** - Use sub-agents for specialized tasks
+3. **CHECK DEPLOYMENTS FIRST** - Most incidents are caused by changes
+4. **USE TODOS** - Track your investigation progress
+5. **BE SPECIFIC** - Cite exact values, timestamps, evidence
+6. **LEARN FROM HISTORY** - Reference past incidents in your conclusions
 """
 
 
@@ -225,6 +242,10 @@ def create_investigation_graph(
     # Collect all tools from sub-agents
     all_tools = []
 
+    # Add Memory tools (incident history) - always available
+    memory_tools = create_memory_tools(org_id)
+    all_tools.extend(memory_tools)
+
     # Add Datadog tools
     datadog_tools = create_datadog_tools(datadog_creds) if datadog_creds else create_datadog_tools(None)
     all_tools.extend(datadog_tools)
@@ -306,11 +327,12 @@ async def run_investigation(
 **Message**: {str(alert_context.get('message', ''))[:500]}
 
 Begin your investigation:
-1. First, use write_todos to plan your investigation steps
-2. Delegate to github-agent to check for recent deployments (HIGHEST PRIORITY)
-3. Delegate to datadog-agent to understand the alert and service health
-4. Synthesize findings and identify root cause
-5. Delegate to slack-agent to report results"""
+1. **CHECK MEMORY FIRST** - Use search_similar_incidents to find if this has happened before
+2. Plan your investigation steps based on past incidents (if any)
+3. Delegate to github-agent to check for recent deployments (HIGHEST PRIORITY)
+4. Delegate to datadog-agent to understand the alert and service health
+5. Synthesize findings, reference past incidents, and identify root cause
+6. Delegate to slack-agent to report results"""
 
     try:
         result = await agent.ainvoke({

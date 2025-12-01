@@ -50,6 +50,11 @@ src/
 
 ## Tools
 
+### Memory Tools (Incident History)
+- `search_similar_incidents` - Find past incidents for same service/alert
+- `get_incident_details` - Get full details of a specific past incident
+- `get_service_incident_history` - Understand patterns for a service
+
 ### Datadog Tools
 - `get_monitor_details` - Get alert/monitor information
 - `get_apm_service_summary` - Service health overview
