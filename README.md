@@ -1,6 +1,29 @@
-# Scout AI - SRE Investigation Agent
+# Scout AI
 
 An AI-powered SRE agent that automatically investigates production incidents by analyzing Datadog alerts, correlating with recent deployments, and reporting findings to Slack.
+
+## Overview
+
+Scout AI reduces Mean Time to Resolution (MTTR) by automatically:
+
+1. **Detecting incidents** via Datadog webhook alerts
+2. **Investigating root cause** by checking recent deployments and analyzing metrics/logs
+3. **Reporting findings** to Slack with confidence levels and recommended actions
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    Datadog      │────▶│   Scout Web     │────▶│  Scout Agent    │
+│   (Webhooks)    │     │   (Next.js)     │     │  (LangGraph)    │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                               │                        │
+                               ▼                        ▼
+                        ┌─────────────────┐     ┌─────────────────┐
+                        │    Supabase     │     │   OpenRouter    │
+                        │  (Auth + DB)    │     │     (LLM)       │
+                        └─────────────────┘     └─────────────────┘
+```
 
 ## Project Structure
 
@@ -14,110 +37,65 @@ scout/
 └── .github/workflows/    # CI/CD pipelines
 ```
 
-## Prerequisites
+## Quick Start
+
+### Prerequisites
 
 - Node.js 18+
 - Python 3.11+
 - Supabase account
-- Datadog account (for monitoring integration)
-- GitHub App (for deployment tracking)
-- Slack App (for notifications)
+- OpenRouter API key
 
-## Quick Start
-
-### 1. Install Dependencies
+### Installation
 
 ```bash
-# Install Node.js dependencies
-npm install
+# Clone the repository
+git clone https://github.com/LiamBush5/scout-v2.git
+cd scout-v2
 
-# Install Python dependencies for the agent
-cd apps/agent
-pip install -e .
+# Install web dependencies
+cd apps/web && npm install
+
+# Install agent dependencies
+cd ../agent && pip install -e .
 ```
 
-### 2. Environment Setup
-
-Copy the environment template and fill in your credentials:
+### Development
 
 ```bash
-cp .env.example .env
-```
+# Terminal 1: Run web dashboard
+cd apps/web && npm run dev
 
-Required environment variables:
-- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
-- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key
-- `OPENROUTER_API_KEY` - OpenRouter API key for LLM access
-- `LANGSMITH_API_KEY` - LangSmith API key for tracing
-
-### 3. Run Development Servers
-
-```bash
-# Terminal 1: Run the web dashboard
-npm run dev:web
-
-# Terminal 2: Run the LangGraph agent
-npm run dev:agent
+# Terminal 2: Run agent
+cd apps/agent && langgraph dev --port 2024
 ```
 
 - Web Dashboard: http://localhost:3000
 - Agent API: http://127.0.0.1:2024
 - Agent Studio: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
 
-## Architecture
-
-### Web Dashboard (`apps/web`)
-- Next.js 16 with App Router
-- Supabase for auth and database
-- Integration management UI
-- Investigation history and results
-
-### Investigation Agent (`apps/agent`)
-- LangGraph-based agent with tool calling
-- OpenRouter for LLM access (Grok 4.1)
-- Specialized tools for:
-  - **Datadog**: Query metrics, search logs, get monitor details
-  - **GitHub**: Find recent deployments, analyze commits
-  - **Slack**: Send investigation results and updates
-
 ## Integrations
 
-### Datadog
-Connect your Datadog account to:
-- Receive webhook alerts
-- Query metrics and logs
-- Get APM service health
+| Integration | Purpose |
+|-------------|---------|
+| **Datadog** | Monitor alerts, metrics, logs, APM |
+| **GitHub** | Deployment tracking, commit analysis |
+| **Slack** | Investigation results, team notifications |
 
-### GitHub
-Install the GitHub App to:
-- Track deployments
-- Analyze recent commits
-- Identify high-risk changes
+## Deployment
 
-### Slack
-Connect Slack to:
-- Receive investigation results
-- Get progress updates
-- Provide feedback on findings
+| App | Platform | Trigger |
+|-----|----------|---------|
+| Web | Vercel | Push to `main` (apps/web changes) |
+| Agent | LangGraph Cloud | Push to `main` (apps/agent changes) |
 
-## Development
+## Documentation
 
-```bash
-# Run web in development
-npm run dev:web
-
-# Run agent in development
-npm run dev:agent
-
-# Build for production
-npm run build
-
-# Run linting
-npm run lint
-```
+- [Product Spec](docs/product-spec.md)
+- [API Reference](docs/api-reference.md)
+- [Code Review Standards](docs/code-review.md)
+- [Quickstart Guide](docs/quickstart.md)
 
 ## License
 
 Private - All rights reserved
-
