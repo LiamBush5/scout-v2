@@ -1,16 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  lint-and-build-web:
-    name: Lint & Build Web
+  lint-web:
+    name: Lint Web
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v4
       
@@ -28,18 +25,31 @@ jobs:
       - name: Lint
         run: npm run lint
         working-directory: apps/web
+
+  typecheck-web:
+    name: Typecheck Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       
-      - name: Build
-        run: npm run build
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
         working-directory: apps/web
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: apps/web
 
   lint-agent:
     name: Lint Agent
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v4
       
@@ -47,15 +57,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: apps/agent/pyproject.toml
       
       - name: Install dependencies
-        run: |
-          pip install -e .
-          pip install ruff
+        run: pip install -e ".[dev]" ruff
         working-directory: apps/agent
       
       - name: Lint with Ruff
         run: ruff check .
         working-directory: apps/agent
-        continue-on-error: true
-

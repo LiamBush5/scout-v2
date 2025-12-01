@@ -1,0 +1,13 @@
+# Default owner for everything
+* @liambush
+
+# Web app
+/apps/web/ @liambush
+
+# Agent
+/apps/agent/ @liambush
+
+# Infrastructure
+/supabase/ @liambush
+/.github/ @liambush
+
