@@ -117,6 +117,27 @@ async function executeJob(
 ): Promise<{ success: boolean; summary: string; findings: unknown[]; alertSent: boolean }> {
     const agentUrl = process.env.AGENT_API_URL || 'http://127.0.0.1:2024'
 
+    const structuredOutputInstructions = `
+
+IMPORTANT: At the END of your response, you MUST include a JSON block with your findings in this exact format:
+
+\`\`\`json
+{
+  "summary": "One sentence summary of what you found",
+  "findings": [
+    {
+      "type": "info|warning|error|success",
+      "title": "Short title for this finding",
+      "description": "Detailed explanation (optional)",
+      "metric": "metric name if applicable (optional)",
+      "value": "metric value if applicable (optional)"
+    }
+  ]
+}
+\`\`\`
+
+Always include this JSON block, even if findings is an empty array.`
+
     // Build the prompt based on job type
     let prompt: string
     switch (job.job_type) {
@@ -129,9 +150,9 @@ For each deployment found:
 3. If yes, compare error rates and latency before vs after the deployment
 4. Report any regressions found
 
-If no deployments found, just confirm "No new deployments detected."
-If deployments found but no regressions, report the deployments briefly.
-If regressions found, provide detailed analysis and suggested actions.`
+If no deployments found, report that with type "info".
+If deployments found but no regressions, report deployments with type "success".
+If regressions found, report each with type "warning" or "error" based on severity.${structuredOutputInstructions}`
             break
 
         case 'health_check':
@@ -143,8 +164,11 @@ For each service, check:
 2. Current P95 latency (compare to typical baseline if known)
 3. Any new error patterns in the last 15 minutes
 
-Only report issues that need attention. If everything looks healthy, just say "All services healthy."
-If issues found, provide specific details and severity.`
+Report each finding with appropriate type:
+- "success" for healthy metrics
+- "info" for neutral observations
+- "warning" for concerning but not critical issues
+- "error" for critical issues needing immediate attention${structuredOutputInstructions}`
             break
 
         case 'error_scanner':
@@ -155,12 +179,10 @@ If issues found, provide specific details and severity.`
 3. Identify any NEW error patterns (errors we haven't seen before)
 4. Note the frequency and affected services
 
-Report:
-- New error patterns with severity assessment
-- Significant increases in known error patterns
-- Skip routine/expected errors
-
-If no significant errors, just confirm "No new error patterns detected."`
+Report each finding:
+- New error patterns with type "error" or "warning"
+- Significant increases in known patterns with type "warning"
+- If no issues, report type "success" with message "No new error patterns"${structuredOutputInstructions}`
             break
 
         case 'baseline_builder':
@@ -172,16 +194,15 @@ For each active service:
 3. Get current request rate
 4. Get CPU and memory usage if available
 
-Return the metrics in a structured format so they can be stored as baselines.
-This is for baseline building, not alerting - just collect the data.`
+Report each metric as a finding with type "info", including the metric name and value.${structuredOutputInstructions}`
             break
 
         case 'custom':
-            prompt = (job.config.prompt as string) || 'Perform a general system health check.'
+            prompt = ((job.config.prompt as string) || 'Perform a general system health check.') + structuredOutputInstructions
             break
 
         default:
-            prompt = 'Perform a general system health check.'
+            prompt = 'Perform a general system health check.' + structuredOutputInstructions
     }
 
     try {
@@ -231,11 +252,39 @@ This is for baseline building, not alerting - just collect the data.`
 
         const result = await response.json()
 
-        // Determine if we should alert
-        const hasIssues = result.findings?.length > 0 ||
-                         result.summary?.toLowerCase().includes('regression') ||
-                         result.summary?.toLowerCase().includes('error') ||
-                         result.summary?.toLowerCase().includes('issue')
+        // Try to extract structured output from the agent's response
+        let summary = 'Job completed'
+        let findings: unknown[] = []
+
+        // The agent response might have messages array with the final response
+        const messages = result.messages || result.output?.messages || []
+        const lastMessage = messages[messages.length - 1]
+        const responseText = lastMessage?.content || result.output || result.summary || ''
+
+        // Try to extract JSON from the response
+        const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/)
+        if (jsonMatch) {
+            try {
+                const parsed = JSON.parse(jsonMatch[1])
+                summary = parsed.summary || summary
+                findings = parsed.findings || []
+            } catch {
+                // JSON parsing failed, try to extract summary from text
+                summary = responseText.replace(/```json[\s\S]*```/g, '').trim().slice(0, 500) || summary
+            }
+        } else {
+            // No JSON block, use the text as summary
+            summary = typeof responseText === 'string'
+                ? responseText.slice(0, 500)
+                : 'Job completed'
+        }
+
+        // Determine if we should alert based on findings
+        const hasIssues = findings.length > 0 &&
+                         findings.some((f: unknown) => {
+                             const finding = f as { type?: string }
+                             return finding.type === 'error' || finding.type === 'warning'
+                         })
 
         const shouldAlert = job.notify_on === 'always' ||
                            (job.notify_on === 'issues' && hasIssues)
@@ -246,8 +295,8 @@ This is for baseline building, not alerting - just collect the data.`
 
         return {
             success: true,
-            summary: result.summary || 'Job completed',
-            findings: result.findings || [],
+            summary,
+            findings,
             alertSent,
         }
     } catch (error) {

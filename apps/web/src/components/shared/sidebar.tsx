@@ -12,9 +12,12 @@ import {
   BarChart3,
   CreditCard,
   FileText,
-  Mail,
   ExternalLink,
   MessageSquare,
+  Clock,
+  Search,
+  BookOpen,
+  HelpCircle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -28,25 +31,42 @@ interface NavItem {
   external?: boolean
 }
 
-/** Primary navigation items */
-const MAIN_NAV: NavItem[] = [
+/**
+ * Primary navigation - daily use items
+ * These are the core features users interact with most
+ */
+const PRIMARY_NAV: NavItem[] = [
   { name: 'Overview', href: ROUTES.DASHBOARD, icon: LayoutDashboard },
+  { name: 'Investigations', href: ROUTES.INVESTIGATIONS, icon: Search },
   { name: 'Chat', href: '/dashboard/chat', icon: MessageSquare },
-  { name: 'Settings', href: ROUTES.SETTINGS, icon: Settings },
+]
+
+/**
+ * Configure navigation - setup and automation
+ * Items related to configuring how the system works
+ */
+const CONFIGURE_NAV: NavItem[] = [
+  { name: 'Runbooks', href: '/dashboard/runbooks', icon: BookOpen },
+  { name: 'Monitoring', href: '/dashboard/monitoring', icon: Clock },
   { name: 'Integrations', href: ROUTES.INTEGRATIONS, icon: Plug },
 ]
 
-/** Account and billing navigation */
+/**
+ * Account navigation - billing and usage
+ */
 const ACCOUNT_NAV: NavItem[] = [
   { name: 'Usage', href: '/dashboard/usage', icon: BarChart3 },
-  { name: 'Spending', href: '/dashboard/spending', icon: CreditCard },
-  { name: 'Billing & Invoices', href: '/dashboard/billing', icon: FileText },
+  { name: 'Billing', href: '/dashboard/billing', icon: CreditCard },
 ]
 
-/** Support and external links */
+/**
+ * Support navigation - settings, docs, help
+ * Less frequently accessed items at the bottom
+ */
 const SUPPORT_NAV: NavItem[] = [
+  { name: 'Settings', href: ROUTES.SETTINGS, icon: Settings },
   { name: 'Docs', href: EXTERNAL_URLS.DOCS, icon: FileText, external: true },
-  { name: 'Contact Us', href: EXTERNAL_URLS.SUPPORT, icon: Mail, external: true },
+  { name: 'Help', href: EXTERNAL_URLS.SUPPORT, icon: HelpCircle, external: true },
 ]
 
 /**
@@ -89,20 +109,29 @@ function NavLink({ item }: { item: NavItem }) {
 }
 
 /**
- * Navigation section with optional divider
+ * Navigation section with optional label and divider
  */
 function NavSection({
   items,
+  label,
   withDivider = false,
 }: {
   items: NavItem[]
+  label?: string
   withDivider?: boolean
 }) {
   return (
-    <div className={cn(withDivider && 'pt-5 mt-5 border-t border-border/40', 'space-y-0.5')}>
-      {items.map((item) => (
-        <NavLink key={item.name} item={item} />
-      ))}
+    <div className={cn(withDivider && 'pt-4 mt-4 border-t border-border/40')}>
+      {label && (
+        <span className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 mb-2 block">
+          {label}
+        </span>
+      )}
+      <div className="space-y-0.5">
+        {items.map((item) => (
+          <NavLink key={item.name} item={item} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -112,6 +141,12 @@ function NavSection({
  *
  * Displays user info and navigation menu.
  * Automatically highlights active route.
+ *
+ * Organization (top to bottom):
+ * 1. Primary - Daily use (Overview, Investigations, Chat)
+ * 2. Configure - Setup & automation (Runbooks, Monitoring, Integrations)
+ * 3. Account - Billing & usage
+ * 4. Support - Settings, docs, help (least frequent)
  */
 export function Sidebar() {
   const { user } = useUser()
@@ -132,9 +167,17 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="space-y-0.5">
-        <NavSection items={MAIN_NAV} />
-        <NavSection items={ACCOUNT_NAV} withDivider />
+      <nav>
+        {/* Primary: Core features users access daily */}
+        <NavSection items={PRIMARY_NAV} />
+
+        {/* Configure: Setup and automation */}
+        <NavSection items={CONFIGURE_NAV} label="Configure" withDivider />
+
+        {/* Account: Billing and usage tracking */}
+        <NavSection items={ACCOUNT_NAV} label="Account" withDivider />
+
+        {/* Support: Settings and help resources */}
         <NavSection items={SUPPORT_NAV} withDivider />
       </nav>
     </aside>

@@ -2,18 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
-const updateJobSchema = z.object({
+const investigationStepSchema = z.object({
+    action: z.string().min(1),
+    params: z.record(z.string(), z.unknown()).optional(),
+    reason: z.string().optional(),
+})
+
+const updateRunbookSchema = z.object({
     name: z.string().min(1).max(100).optional(),
     description: z.string().max(500).optional(),
-    schedule_interval: z.number().min(5).max(1440).optional(),
+    trigger_type: z.enum(['alert_pattern', 'service_alert', 'manual']).optional(),
+    trigger_config: z.record(z.string(), z.unknown()).optional(),
+    investigation_steps: z.array(investigationStepSchema).min(1).optional(),
+    if_found_actions: z.record(z.string(), z.string()).optional(),
     enabled: z.boolean().optional(),
-    config: z.record(z.string(), z.unknown()).optional(),
-    slack_channel_id: z.string().nullable().optional(),
-    notify_on: z.enum(['always', 'issues', 'never']).optional(),
+    priority: z.number().min(1).max(1000).optional(),
 })
 
 /**
- * GET /api/monitoring-jobs/[id] - Get a specific monitoring job with run history
+ * GET /api/runbooks/[id] - Get a specific runbook with execution history
  */
 export async function GET(
     request: NextRequest,
@@ -28,19 +35,22 @@ export async function GET(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Get job with recent runs
-        const { data: job, error } = await supabase
-            .from('monitoring_jobs')
+        // Get runbook with recent executions
+        const { data: runbook, error } = await supabase
+            .from('runbooks')
             .select(`
                 *,
-                monitoring_job_runs (
+                runbook_executions (
                     id,
                     status,
-                    summary,
+                    trigger_source,
+                    trigger_data,
+                    steps_executed,
                     findings,
-                    alert_sent,
-                    alert_severity,
-                    error_message,
+                    conclusion,
+                    confidence_score,
+                    matched_condition,
+                    user_feedback,
                     started_at,
                     completed_at,
                     duration_ms
@@ -49,33 +59,33 @@ export async function GET(
             .eq('id', id)
             .single()
 
-        if (error || !job) {
-            return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+        if (error || !runbook) {
+            return NextResponse.json({ error: 'Runbook not found' }, { status: 404 })
         }
 
-        // Sort runs by started_at descending and limit to 20
-        const runs = (job.monitoring_job_runs || [])
+        // Sort executions by started_at descending and limit to 20
+        const executions = (runbook.runbook_executions || [])
             .sort((a: { started_at: string }, b: { started_at: string }) =>
                 new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
             )
             .slice(0, 20)
 
         return NextResponse.json({
-            job: {
-                ...job,
-                monitoring_job_runs: undefined,
-                runs,
+            runbook: {
+                ...runbook,
+                runbook_executions: undefined,
+                executions,
             }
         })
 
     } catch (error) {
-        console.error('Error fetching monitoring job:', error)
+        console.error('Error fetching runbook:', error)
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }
 
 /**
- * PATCH /api/monitoring-jobs/[id] - Update a monitoring job
+ * PATCH /api/runbooks/[id] - Update a runbook
  */
 export async function PATCH(
     request: NextRequest,
@@ -91,58 +101,41 @@ export async function PATCH(
         }
 
         const body = await request.json()
-        const validatedData = updateJobSchema.parse(body)
+        const validatedData = updateRunbookSchema.parse(body)
 
-        // Build update object
         const updateData: Record<string, unknown> = {
             ...validatedData,
             updated_at: new Date().toISOString(),
         }
 
-        // If enabling, set next_run_at
-        if (validatedData.enabled === true) {
-            // Get current job to get schedule_interval
-            const { data: currentJob } = await supabase
-                .from('monitoring_jobs')
-                .select('schedule_interval')
-                .eq('id', id)
-                .single()
-
-            if (currentJob) {
-                const interval = validatedData.schedule_interval || currentJob.schedule_interval
-                const nextRunAt = new Date()
-                nextRunAt.setMinutes(nextRunAt.getMinutes() + interval)
-                updateData.next_run_at = nextRunAt.toISOString()
-            }
-        } else if (validatedData.enabled === false) {
-            updateData.next_run_at = null
-        }
-
-        const { data: job, error } = await supabase
-            .from('monitoring_jobs')
+        const { data: runbook, error } = await supabase
+            .from('runbooks')
             .update(updateData)
             .eq('id', id)
             .select()
             .single()
 
         if (error) {
-            console.error('Failed to update monitoring job:', error)
-            return NextResponse.json({ error: 'Failed to update job' }, { status: 500 })
+            console.error('Failed to update runbook:', error)
+            if (error.code === '23505') {
+                return NextResponse.json({ error: 'A runbook with this name already exists' }, { status: 409 })
+            }
+            return NextResponse.json({ error: 'Failed to update runbook' }, { status: 500 })
         }
 
-        return NextResponse.json({ job })
+        return NextResponse.json({ runbook })
 
     } catch (error) {
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: 'Invalid request', details: error.issues }, { status: 400 })
         }
-        console.error('Error updating monitoring job:', error)
+        console.error('Error updating runbook:', error)
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }
 
 /**
- * DELETE /api/monitoring-jobs/[id] - Delete a monitoring job
+ * DELETE /api/runbooks/[id] - Delete a runbook
  */
 export async function DELETE(
     request: NextRequest,
@@ -158,19 +151,19 @@ export async function DELETE(
         }
 
         const { error } = await supabase
-            .from('monitoring_jobs')
+            .from('runbooks')
             .delete()
             .eq('id', id)
 
         if (error) {
-            console.error('Failed to delete monitoring job:', error)
-            return NextResponse.json({ error: 'Failed to delete job' }, { status: 500 })
+            console.error('Failed to delete runbook:', error)
+            return NextResponse.json({ error: 'Failed to delete runbook' }, { status: 500 })
         }
 
         return NextResponse.json({ success: true })
 
     } catch (error) {
-        console.error('Error deleting monitoring job:', error)
+        console.error('Error deleting runbook:', error)
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }

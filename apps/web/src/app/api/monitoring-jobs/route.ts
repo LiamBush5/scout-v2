@@ -7,10 +7,10 @@ const createJobSchema = z.object({
     description: z.string().max(500).optional(),
     job_type: z.enum(['deployment_watcher', 'health_check', 'error_scanner', 'baseline_builder', 'custom']),
     schedule_interval: z.number().min(5).max(1440), // 5 min to 24 hours
-    enabled: z.boolean().default(true),
-    config: z.record(z.unknown()).default({}),
+    enabled: z.boolean().optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
     slack_channel_id: z.string().optional(),
-    notify_on: z.enum(['always', 'issues', 'never']).default('issues'),
+    notify_on: z.enum(['always', 'issues', 'never']).optional(),
 })
 
 /**
@@ -45,7 +45,10 @@ export async function GET() {
                     id,
                     status,
                     summary,
+                    findings,
+                    error_message,
                     alert_sent,
+                    alert_severity,
                     started_at,
                     completed_at,
                     duration_ms
@@ -138,7 +141,7 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: 'Invalid request', details: error.errors }, { status: 400 })
+            return NextResponse.json({ error: 'Invalid request', details: error.issues }, { status: 400 })
         }
         console.error('Error creating monitoring job:', error)
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
