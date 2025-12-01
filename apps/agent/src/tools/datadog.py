@@ -125,7 +125,7 @@ def create_datadog_tools(credentials: dict | None) -> list:
                         response = api.query_metrics(_from=from_ts, to=now, query=query)
                         if response.series:
                             points = response.series[0].pointlist or []
-                            values = [p[1] for p in points if p[1] is not None]
+                            values = [p.value[1] for p in points if p.value is not None and len(p.value) > 1]
                             if values:
                                 current = values[-1]
                                 if "latency" in name and current > 1000000:
@@ -194,7 +194,7 @@ def create_datadog_tools(credentials: dict | None) -> list:
                 results = []
                 for series in (response.series or []):
                     points = series.pointlist or []
-                    values = [p[1] for p in points if p[1] is not None]
+                    values = [p.value[1] for p in points if p.value is not None and len(p.value) > 1]
                     if values:
                         results.append({
                             "scope": series.scope,
@@ -242,6 +242,10 @@ def create_datadog_tools(credentials: dict | None) -> list:
         try:
             from datadog_api_client import Configuration, ApiClient
             from datadog_api_client.v2.api import logs_api
+            from datadog_api_client.v2.model.logs_list_request import LogsListRequest
+            from datadog_api_client.v2.model.logs_query_filter import LogsQueryFilter
+            from datadog_api_client.v2.model.logs_list_request_page import LogsListRequestPage
+            from datadog_api_client.v2.model.logs_sort import LogsSort
 
             config = Configuration()
             config.api_key["apiKeyAuth"] = credentials["api_key"]
@@ -250,13 +254,9 @@ def create_datadog_tools(credentials: dict | None) -> list:
 
             with ApiClient(config) as api_client:
                 api = logs_api.LogsApi(api_client)
-                from datadog_api_client.v2.model.logs_list_request import LogsListRequest
-                from datadog_api_client.v2.model.logs_list_request_filter import LogsListRequestFilter
-                from datadog_api_client.v2.model.logs_list_request_page import LogsListRequestPage
-                from datadog_api_client.v2.model.logs_sort import LogsSort
 
                 body = LogsListRequest(
-                    filter=LogsListRequestFilter(
+                    filter=LogsQueryFilter(
                         query=query,
                         _from=f"now-{minutes_back}m",
                         to="now",
@@ -353,7 +353,7 @@ def create_datadog_tools(credentials: dict | None) -> list:
                 response = api.list_events(
                     start=start,
                     end=now,
-                    tags=",".join(tags) if tags else None,
+                    tags=",".join(tags) if tags else "",
                 )
 
                 events = []
