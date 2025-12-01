@@ -1,13 +1,13 @@
 # Default owner for everything
-* @liambush
+* @LiamBush5
 
 # Web app
-/apps/web/ @liambush
+/apps/web/ @LiamBush5
 
 # Agent
-/apps/agent/ @liambush
+/apps/agent/ @LiamBush5
 
 # Infrastructure
-/supabase/ @liambush
-/.github/ @liambush
+/supabase/ @LiamBush5
+/.github/ @LiamBush5
 

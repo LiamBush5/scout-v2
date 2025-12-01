@@ -14,18 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install LangGraph CLI
         run: pip install -U "langgraph-cli[inmem]"
-      
+
       - name: Deploy to LangGraph Cloud
         run: |
           langgraph deploy \
