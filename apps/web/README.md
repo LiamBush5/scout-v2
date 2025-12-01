@@ -1,4 +1,4 @@
-# Scout Web Dashboard
+# Scout Web Dashboard .
 
 Next.js frontend for the Scout AI SRE Investigation Agent.
 
