@@ -399,11 +399,11 @@ function IntegrationsPageContent() {
 
             {/* Webhook configuration */}
             {integrationStatus.datadog.connected && (
-                <Card className="p-5 border-border/50 space-y-3">
+                <Card className="p-5 border-border/50 space-y-4">
                     <div>
                         <p className="text-sm font-medium">Datadog Webhook URL</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                            Add this URL to your Datadog monitors to trigger automatic investigations.
+                            Add this webhook to your Datadog monitors to automatically trigger Scout investigations when alerts fire.
                         </p>
                     </div>
                     <div className="flex gap-2">
@@ -425,14 +425,68 @@ function IntegrationsPageContent() {
                             )}
                         </Button>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Setup Instructions</p>
+                        <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
+                            <li>Click the link below, then click the <span className="font-medium text-foreground">Webhooks</span> tile</li>
+                            <li>Go to the <span className="font-medium text-foreground">Configure</span> tab and click <span className="font-medium text-foreground">+ New</span></li>
+                            <li>Enter <span className="font-mono bg-muted/50 px-1 rounded">scout</span> as the Name and paste the URL above</li>
+                            <li>Replace the Payload with the template below and click <span className="font-medium text-foreground">Save</span></li>
+                            <li>In any monitor, add <span className="font-mono bg-muted/50 px-1 rounded">@webhook-scout</span> to the notification message</li>
+                        </ol>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium text-muted-foreground">Payload Template</p>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={async () => {
+                                    const payload = JSON.stringify({
+                                        alert_id: "$ALERT_ID",
+                                        alert_title: "$ALERT_TITLE",
+                                        alert_transition: "$ALERT_TRANSITION",
+                                        body: "$EVENT_MSG",
+                                        tags: "$TAGS",
+                                        link: "$LINK",
+                                        priority: "$PRIORITY"
+                                    }, null, 4)
+                                    await navigator.clipboard.writeText(payload)
+                                    toast.success('Payload copied')
+                                }}
+                            >
+                                <Copy className="h-3 w-3 mr-1" />
+                                Copy
+                            </Button>
+                        </div>
+                        <pre className="text-xs bg-muted/30 p-3 rounded-md overflow-x-auto font-mono text-muted-foreground">{`{
+    "alert_id": "$ALERT_ID",
+    "alert_title": "$ALERT_TITLE",
+    "alert_transition": "$ALERT_TRANSITION",
+    "body": "$EVENT_MSG",
+    "tags": "$TAGS",
+    "link": "$LINK",
+    "priority": "$PRIORITY"
+}`}</pre>
+                    </div>
+                    <div className="flex items-center gap-4 pt-1">
+                        <a
+                            href="https://app.datadoghq.com/integrations?search=webhooks"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+                        >
+                            Open Integrations
+                            <ExternalLink className="h-3 w-3" />
+                        </a>
                         <a
                             href="https://app.datadoghq.com/monitors/manage"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
                         >
-                            Open Datadog Monitors
+                            Manage Monitors
                             <ExternalLink className="h-3 w-3" />
                         </a>
                         <a
