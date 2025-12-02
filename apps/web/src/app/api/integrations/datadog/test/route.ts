@@ -1,36 +1,19 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { getUserOrg } from '@/lib/auth/helpers'
 import { client, v1 } from '@datadog/datadog-api-client'
-
-function getSupabaseAdmin() {
-    return createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-}
 
 // POST - Test Datadog connection by fetching monitors and basic info
 export async function POST() {
     try {
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        const auth = await getUserOrg(supabase)
+        if ('error' in auth) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status })
         }
 
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('current_org_id')
-            .eq('id', user.id)
-            .single()
-
-        if (!profile?.current_org_id) {
-            return NextResponse.json({ error: 'No organization found' }, { status: 400 })
-        }
-
-        const orgId = profile.current_org_id
+        const orgId = auth.orgId
         const supabaseAdmin = getSupabaseAdmin()
 
         // Get credentials from vault

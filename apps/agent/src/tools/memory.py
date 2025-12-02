@@ -344,5 +344,146 @@ Comment: {inc.get('feedback_comment', 'No comment')}
             return f"Error analyzing service history: {str(e)}"
 
 
-    return [search_similar_incidents, get_incident_details, get_service_incident_history]
+    @tool
+    def detect_patterns_and_suggest(
+        service: str | None = None,
+        days_back: int = 30,
+    ) -> str:
+        """
+        Analyze recent incidents to detect patterns and suggest improvements.
+
+        Use this to provide proactive recommendations based on:
+        - Recurring issues (same root cause happening multiple times)
+        - Time-based patterns (issues happening at specific times)
+        - Deployment correlation (issues after certain types of changes)
+
+        Args:
+            service: Filter to a specific service (optional)
+            days_back: Days to analyze (default: 30)
+
+        Returns:
+            Pattern analysis with actionable suggestions
+        """
+        try:
+            supabase = get_supabase_client()
+
+            cutoff = datetime.utcnow() - timedelta(days=days_back)
+
+            query = supabase.from_("investigations").select(
+                "id, service, alert_name, severity, root_cause, confidence_score, "
+                "created_at, deployments_found, feedback_rating, suggested_actions"
+            ).eq("status", "completed").gte("created_at", cutoff.isoformat())
+
+            if org_id:
+                query = query.eq("org_id", org_id)
+
+            if service:
+                query = query.ilike("service", f"%{service}%")
+
+            result = query.order("created_at", desc=True).execute()
+
+            if not result.data or len(result.data) < 2:
+                return "Not enough incident data to detect patterns. Need at least 2 completed investigations."
+
+            incidents = result.data
+            patterns = []
+            suggestions = []
+
+            # Pattern 1: Recurring root causes
+            root_causes = {}
+            for inc in incidents:
+                rc = inc.get("root_cause", "").lower()
+                if rc and len(rc) > 10:
+                    # Extract key phrases
+                    for keyword in ["connection pool", "memory leak", "timeout", "rate limit",
+                                    "database", "cache", "deployment", "configuration", "cpu",
+                                    "disk", "network", "authentication", "certificate"]:
+                        if keyword in rc:
+                            key = keyword.replace(" ", "_")
+                            if key not in root_causes:
+                                root_causes[key] = []
+                            root_causes[key].append({
+                                "id": inc["id"][:8],
+                                "service": inc.get("service"),
+                                "date": inc["created_at"][:10],
+                                "full_cause": inc.get("root_cause"),
+                            })
+
+            # Report recurring patterns
+            for cause, occurrences in sorted(root_causes.items(), key=lambda x: len(x[1]), reverse=True):
+                if len(occurrences) >= 2:
+                    services = list(set(o["service"] for o in occurrences if o["service"]))
+                    patterns.append(f"⚠️ **{cause.replace('_', ' ').title()}** issues: {len(occurrences)} incidents")
+                    patterns.append(f"   Services affected: {', '.join(services)}")
+
+                    # Add specific suggestion based on pattern
+                    if cause == "connection_pool":
+                        suggestions.append("→ Consider increasing connection pool size or adding connection pooler (PgBouncer)")
+                    elif cause == "memory_leak":
+                        suggestions.append("→ Add memory profiling to deployment pipeline; review recent code for resource cleanup")
+                    elif cause == "timeout":
+                        suggestions.append("→ Review timeout configurations; consider circuit breakers")
+                    elif cause == "rate_limit":
+                        suggestions.append("→ Implement request queuing or increase rate limits with proper caching")
+                    elif cause == "deployment":
+                        suggestions.append("→ Strengthen deployment validation; add canary deployments or feature flags")
+
+            # Pattern 2: Time-based patterns (business hours vs off-hours)
+            business_hours = 0
+            off_hours = 0
+            for inc in incidents:
+                created = datetime.fromisoformat(inc["created_at"].replace("Z", "+00:00"))
+                hour = created.hour
+                if 9 <= hour <= 17:
+                    business_hours += 1
+                else:
+                    off_hours += 1
+
+            if business_hours > off_hours * 2 and business_hours > 3:
+                patterns.append(f"📊 **Business hours spike**: {business_hours} incidents during 9am-5pm vs {off_hours} off-hours")
+                suggestions.append("→ Issues may be load-related; review autoscaling thresholds")
+
+            if off_hours > business_hours * 2 and off_hours > 3:
+                patterns.append(f"📊 **Off-hours spike**: {off_hours} incidents outside business hours vs {business_hours} during")
+                suggestions.append("→ Check for scheduled jobs, batch processes, or maintenance windows causing issues")
+
+            # Pattern 3: Deployment correlation
+            deploy_related = 0
+            for inc in incidents:
+                deploys = inc.get("deployments_found", [])
+                if deploys and len(deploys) > 0:
+                    deploy_related += 1
+
+            if deploy_related > len(incidents) * 0.5:
+                patterns.append(f"🚀 **Deployment correlation**: {deploy_related}/{len(incidents)} incidents had recent deployments")
+                suggestions.append("→ Strengthen pre-deploy testing; consider implementing staged rollouts")
+
+            # Pattern 4: Service hotspots
+            by_service = {}
+            for inc in incidents:
+                svc = inc.get("service", "unknown")
+                by_service[svc] = by_service.get(svc, 0) + 1
+
+            hotspots = [(s, c) for s, c in by_service.items() if c >= 3]
+            if hotspots:
+                for svc, count in sorted(hotspots, key=lambda x: x[1], reverse=True):
+                    patterns.append(f"🔥 **{svc}** is a hotspot: {count} incidents in {days_back} days")
+                suggestions.append("→ Prioritize reliability work on hotspot services; consider architectural review")
+
+            if not patterns:
+                return f"No significant patterns detected in {len(incidents)} incidents over the past {days_back} days. Keep monitoring!"
+
+            output = f"## Pattern Analysis ({len(incidents)} incidents, past {days_back} days)\n\n"
+            output += "### Detected Patterns\n"
+            output += "\n".join(patterns)
+            output += "\n\n### Suggested Actions\n"
+            output += "\n".join(suggestions) if suggestions else "No specific suggestions at this time."
+
+            return output
+
+        except Exception as e:
+            return f"Error detecting patterns: {str(e)}"
+
+
+    return [search_similar_incidents, get_incident_details, get_service_incident_history, detect_patterns_and_suggest]
 

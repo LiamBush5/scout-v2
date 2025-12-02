@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 // Types for agent credentials
 interface DatadogCredentials {
     apiKey: string
@@ -30,21 +30,6 @@ const investigateRequestSchema = z.object({
     investigationId: uuidSchema,
     orgId: uuidSchema,
 })
-
-/**
- * Get Supabase admin client with proper error handling
- */
-function getSupabaseAdmin() {
-    const url = requireEnv('NEXT_PUBLIC_SUPABASE_URL')
-    const key = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
-
-    return createClient(url, key, {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-        },
-    })
-}
 
 export const maxDuration = 300 // 5 minutes
 

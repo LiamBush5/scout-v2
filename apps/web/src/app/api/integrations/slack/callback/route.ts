@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
-
-function getSupabaseAdmin() {
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { updateIntegrationStatus } from '@/lib/integrations/helpers'
 
 // GET - Handle Slack OAuth callback
 export async function GET(request: NextRequest) {
@@ -101,27 +95,21 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Upsert integration status with metadata
-    await supabaseAdmin
-      .from('integrations')
-      .upsert({
-        org_id: orgId,
-        provider: 'slack',
-        status: 'connected',
-        connected_by: user.id,
-        connected_at: new Date().toISOString(),
-        metadata: {
-          team_id: data.team?.id,
-          team_name: data.team?.name,
-          bot_user_id: data.bot_user_id,
-          channel_name: data.incoming_webhook?.channel,
-          channel_id: data.incoming_webhook?.channel_id,
-        },
-        error_message: null,
-        updated_at: new Date().toISOString(),
-      }, {
-        onConflict: 'org_id,provider',
-      })
+    // Update integration status with metadata
+    await updateIntegrationStatus(
+      orgId,
+      'slack',
+      supabaseAdmin,
+      'connected',
+      user.id,
+      {
+        team_id: data.team?.id,
+        team_name: data.team?.name,
+        bot_user_id: data.bot_user_id,
+        channel_name: data.incoming_webhook?.channel,
+        channel_id: data.incoming_webhook?.channel_id,
+      }
+    )
 
     return NextResponse.redirect(new URL(`${redirectBase}?slack=connected`, baseUrl))
   } catch (error) {

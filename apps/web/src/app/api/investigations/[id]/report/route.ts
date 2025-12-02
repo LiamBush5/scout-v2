@@ -155,19 +155,22 @@ function generateReport(investigation: Investigation, similarIncidents: SimilarI
         : []
 
     // Format deployments
-    const deployments = Array.isArray(investigation.deployments_found)
-        ? investigation.deployments_found.map((d: unknown) => {
-            if (typeof d === 'object' && d !== null) {
-                const deploy = d as Record<string, unknown>
-                return {
-                    sha: String(deploy.sha || '').slice(0, 8),
-                    author: String(deploy.author || 'Unknown'),
-                    message: String(deploy.message || '').slice(0, 100),
-                    deployed_at: deploy.deployed_at || deploy.created_at || null,
+    type DeploymentInfo = { sha: string; author: string; message: string; deployed_at: unknown }
+    const deployments: DeploymentInfo[] = Array.isArray(investigation.deployments_found)
+        ? investigation.deployments_found
+            .map((d: unknown): DeploymentInfo | null => {
+                if (typeof d === 'object' && d !== null) {
+                    const deploy = d as Record<string, unknown>
+                    return {
+                        sha: String(deploy.sha || '').slice(0, 8),
+                        author: String(deploy.author || 'Unknown'),
+                        message: String(deploy.message || '').slice(0, 100),
+                        deployed_at: deploy.deployed_at || deploy.created_at || null,
+                    }
                 }
-            }
-            return null
-        }).filter(Boolean)
+                return null
+            })
+            .filter((d): d is DeploymentInfo => d !== null)
         : []
 
     // Format similar incidents

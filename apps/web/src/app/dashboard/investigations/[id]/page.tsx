@@ -35,6 +35,9 @@ import {
   Timer,
   Server,
   BarChart3,
+  Download,
+  Share2,
+  X,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -113,6 +116,9 @@ export default function InvestigationDetailPage() {
   const [feedbackComment, setFeedbackComment] = useState('')
   const [showCommentInput, setShowCommentInput] = useState(false)
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportMarkdown, setReportMarkdown] = useState<string | null>(null)
+  const [loadingReport, setLoadingReport] = useState(false)
 
   useEffect(() => {
     async function fetchData() {
@@ -234,6 +240,49 @@ export default function InvestigationDetailPage() {
     setTimeout(() => setCopiedCommand(null), 2000)
   }
 
+  const handleGenerateReport = async () => {
+    if (investigation?.status !== 'completed') {
+      toast.error('Investigation must be completed to generate a report')
+      return
+    }
+
+    setLoadingReport(true)
+    try {
+      const response = await fetch(`/api/investigations/${params.id}/report`)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to generate report')
+      }
+      const data = await response.json()
+      setReportMarkdown(data.report.markdown)
+      setShowReportModal(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to generate report')
+    } finally {
+      setLoadingReport(false)
+    }
+  }
+
+  const handleCopyReport = async () => {
+    if (!reportMarkdown) return
+    await navigator.clipboard.writeText(reportMarkdown)
+    toast.success('Report copied to clipboard')
+  }
+
+  const handleDownloadReport = () => {
+    if (!reportMarkdown || !investigation) return
+    const blob = new Blob([reportMarkdown], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `incident-report-${investigation.id.slice(0, 8)}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('Report downloaded')
+  }
+
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
@@ -306,11 +355,35 @@ export default function InvestigationDetailPage() {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Back button */}
-      <Button variant="ghost" onClick={() => router.back()} size="sm" className="h-8 text-xs -ml-2">
-        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-        Back to Investigations
-      </Button>
+      {/* Header Actions */}
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" onClick={() => router.back()} size="sm" className="h-8 text-xs -ml-2">
+          <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+          Back to Investigations
+        </Button>
+
+        {investigation.status === 'completed' && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={handleGenerateReport}
+            disabled={loadingReport}
+          >
+            {loadingReport ? (
+              <>
+                <Activity className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Share2 className="mr-1.5 h-3.5 w-3.5" />
+                Generate Report
+              </>
+            )}
+          </Button>
+        )}
+      </div>
 
       {/* ============================================================ */}
       {/* HEADER - Executive Summary */}
@@ -743,6 +816,62 @@ export default function InvestigationDetailPage() {
           </div>
         )}
       </Card>
+
+      {/* ============================================================ */}
+      {/* REPORT MODAL */}
+      {/* ============================================================ */}
+      {showReportModal && reportMarkdown && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            onClick={() => setShowReportModal(false)}
+          />
+
+          {/* Modal */}
+          <div className="relative w-full max-w-3xl max-h-[80vh] m-4 bg-card rounded-lg border border-border shadow-lg overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                <h2 className="font-semibold">Post-Incident Report</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleCopyReport}>
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copy
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDownloadReport}>
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  Download
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setShowReportModal(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-6">
+              <pre className="whitespace-pre-wrap font-mono text-sm text-foreground/90 leading-relaxed">
+                {reportMarkdown}
+              </pre>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-border bg-muted/20">
+              <p className="text-xs text-muted-foreground text-center">
+                Share this report with your team via Slack, email, or your incident management system.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

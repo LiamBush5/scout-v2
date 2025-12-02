@@ -1,44 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { getUserOrg } from '@/lib/auth/helpers'
 import { logger } from '@/lib/utils/logger'
 import { AuthenticationError, NotFoundError, getErrorMessage } from '@/lib/utils/errors'
-
-function getSupabaseAdmin() {
-    return createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-}
 
 // POST - Complete onboarding setup
 export async function POST(request: NextRequest) {
     try {
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (!user) {
-            throw new AuthenticationError('User not authenticated')
+        const auth = await getUserOrg(supabase)
+        if ('error' in auth) {
+            if (auth.status === 401) {
+                throw new AuthenticationError('User not authenticated')
+            }
+            throw new NotFoundError('Organization', auth.error)
         }
 
         const body = await request.json()
         const { selectedRepos } = body
 
-        // Get user's org
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('current_org_id')
-            .eq('id', user.id)
-            .single()
-
-        if (!profile?.current_org_id) {
-            throw new NotFoundError('Organization', user.id)
-        }
-
-        const orgId = profile.current_org_id
+        const orgId = auth.orgId
         const supabaseAdmin = getSupabaseAdmin()
 
-        logger.info('Completing onboarding', { userId: user.id, orgId })
+        logger.info('Completing onboarding', { userId: auth.userId, orgId })
 
         // Update organization onboarding status
         const { error: updateError } = await supabaseAdmin
@@ -90,7 +75,7 @@ export async function POST(request: NextRequest) {
             logger.info('Stored selected repositories', { orgId, repoCount: selectedRepos.length })
         }
 
-        logger.info('Onboarding completed successfully', { userId: user.id, orgId })
+        logger.info('Onboarding completed successfully', { userId: auth.userId, orgId })
         return NextResponse.json({ success: true, message: 'Onboarding completed successfully' })
     } catch (error) {
         logger.error('Onboarding complete error', error)

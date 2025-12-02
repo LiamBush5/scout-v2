@@ -1,24 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { logger } from '@/lib/utils/logger'
 import { ValidationError, NotFoundError, AppError, getErrorMessage } from '@/lib/utils/errors'
 import { parseAndValidate, datadogWebhookPayloadSchema, orgSlugSchema, requireEnv } from '@/lib/utils/validation'
-
-/**
- * Get Supabase admin client with proper error handling
- */
-function getSupabaseAdmin() {
-    const url = requireEnv('NEXT_PUBLIC_SUPABASE_URL')
-    const key = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
-
-    return createClient(url, key, {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-        },
-    })
-}
 
 /**
  * Extract organization slug from Datadog tags

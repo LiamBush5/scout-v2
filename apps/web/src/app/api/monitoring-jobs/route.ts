@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getUserOrg } from '@/lib/auth/helpers'
 import { z } from 'zod'
 
 const createJobSchema = z.object({
@@ -19,21 +20,9 @@ const createJobSchema = z.object({
 export async function GET() {
     try {
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-
-        // Get user's org
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('current_org_id')
-            .eq('id', user.id)
-            .single()
-
-        if (!profile?.current_org_id) {
-            return NextResponse.json({ error: 'No organization selected' }, { status: 400 })
+        const auth = await getUserOrg(supabase)
+        if ('error' in auth) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status })
         }
 
         // Get jobs with latest run info
@@ -54,7 +43,7 @@ export async function GET() {
                     duration_ms
                 )
             `)
-            .eq('org_id', profile.current_org_id)
+            .eq('org_id', auth.orgId)
             .order('created_at', { ascending: false })
 
         if (error) {
@@ -90,21 +79,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-
-        // Get user's org
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('current_org_id')
-            .eq('id', user.id)
-            .single()
-
-        if (!profile?.current_org_id) {
-            return NextResponse.json({ error: 'No organization selected' }, { status: 400 })
+        const auth = await getUserOrg(supabase)
+        if ('error' in auth) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status })
         }
 
         const body = await request.json()
@@ -117,7 +94,7 @@ export async function POST(request: NextRequest) {
         const { data: job, error } = await supabase
             .from('monitoring_jobs')
             .insert({
-                org_id: profile.current_org_id,
+                org_id: auth.orgId,
                 name: validatedData.name,
                 description: validatedData.description,
                 job_type: validatedData.job_type,
@@ -127,7 +104,7 @@ export async function POST(request: NextRequest) {
                 slack_channel_id: validatedData.slack_channel_id,
                 notify_on: validatedData.notify_on,
                 next_run_at: validatedData.enabled ? nextRunAt.toISOString() : null,
-                created_by: user.id,
+                created_by: auth.userId,
             })
             .select()
             .single()

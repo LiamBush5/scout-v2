@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -41,43 +42,18 @@ import {
     ChevronRight,
     Info,
 } from 'lucide-react'
+import type {
+    MonitoringJobWithRun,
+    Finding,
+    FindingType,
+    JobType,
+    NotifyOn,
+} from '@/lib/monitoring'
 
-interface Finding {
-    type: 'info' | 'warning' | 'error' | 'success'
-    title: string
-    description?: string
-    metric?: string
-    value?: string | number
-}
-
-interface MonitoringJob {
-    id: string
-    name: string
-    description: string | null
-    job_type: 'deployment_watcher' | 'health_check' | 'error_scanner' | 'baseline_builder' | 'custom'
-    schedule_interval: number
-    enabled: boolean
-    config: Record<string, unknown>
-    notify_on: 'always' | 'issues' | 'never'
-    last_run_at: string | null
-    next_run_at: string | null
-    consecutive_failures: number
-    created_at: string
-    latest_run: {
-        id: string
-        status: 'running' | 'completed' | 'failed'
-        summary: string | null
-        findings: Finding[] | null
-        error_message: string | null
-        alert_sent: boolean
-        alert_severity: 'info' | 'warning' | 'critical' | null
-        started_at: string
-        completed_at: string | null
-        duration_ms: number | null
-    } | null
-}
-
-const JOB_TYPE_INFO = {
+const JOB_TYPE_INFO: Record<
+    JobType,
+    { label: string; description: string; icon: typeof Clock; color: string }
+> = {
     deployment_watcher: {
         label: 'Deployment Watcher',
         description: 'Monitor for new deployments and detect regressions',
@@ -111,31 +87,32 @@ const JOB_TYPE_INFO = {
 }
 
 export default function MonitoringPage() {
-    const [jobs, setJobs] = useState<MonitoringJob[]>([])
+    const [jobs, setJobs] = useState<MonitoringJobWithRun[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [isCreating, setIsCreating] = useState(false)
     const [showCreateDialog, setShowCreateDialog] = useState(false)
     const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set())
     const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set())
 
-    // Form state for new job
     const [newJob, setNewJob] = useState({
         name: '',
         description: '',
-        job_type: 'deployment_watcher' as const,
-        schedule_interval: 15,
-        notify_on: 'issues' as const,
+        job_type: 'health_check' as JobType,
+        schedule_interval: 60,
+        notify_on: 'issues' as NotifyOn,
     })
 
     const fetchJobs = useCallback(async () => {
         try {
             const response = await fetch('/api/monitoring-jobs')
-            if (response.ok) {
-                const data = await response.json()
-                setJobs(data.jobs || [])
+            if (!response.ok) {
+                throw new Error('Failed to fetch jobs')
             }
+            const data = await response.json()
+            setJobs(data.jobs || [])
         } catch (error) {
             console.error('Failed to fetch jobs:', error)
+            toast.error('Failed to load monitoring jobs')
         } finally {
             setIsLoading(false)
         }
@@ -143,12 +120,16 @@ export default function MonitoringPage() {
 
     useEffect(() => {
         fetchJobs()
-        // Refresh every 30 seconds
         const interval = setInterval(fetchJobs, 30000)
         return () => clearInterval(interval)
     }, [fetchJobs])
 
     const createJob = async () => {
+        if (!newJob.name.trim()) {
+            toast.error('Please enter a job name')
+            return
+        }
+
         setIsCreating(true)
         try {
             const response = await fetch('/api/monitoring-jobs', {
@@ -156,68 +137,90 @@ export default function MonitoringPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newJob),
             })
-            if (response.ok) {
-                setShowCreateDialog(false)
-                setNewJob({
-                    name: '',
-                    description: '',
-                    job_type: 'deployment_watcher',
-                    schedule_interval: 15,
-                    notify_on: 'issues',
-                })
-                fetchJobs()
+
+            if (!response.ok) {
+                const error = await response.json()
+                throw new Error(error.error || 'Failed to create job')
             }
+
+            toast.success('Monitoring job created')
+            setShowCreateDialog(false)
+            setNewJob({
+                name: '',
+                description: '',
+                job_type: 'health_check',
+                schedule_interval: 60,
+                notify_on: 'issues',
+            })
+            fetchJobs()
         } catch (error) {
             console.error('Failed to create job:', error)
+            toast.error(error instanceof Error ? error.message : 'Failed to create job')
         } finally {
             setIsCreating(false)
         }
     }
 
-    const toggleJob = async (job: MonitoringJob) => {
+    const toggleJob = async (job: MonitoringJobWithRun) => {
         try {
             const response = await fetch(`/api/monitoring-jobs/${job.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled: !job.enabled }),
             })
-            if (response.ok) {
-                fetchJobs()
+
+            if (!response.ok) {
+                throw new Error('Failed to update job')
             }
+
+            toast.success(job.enabled ? 'Job paused' : 'Job enabled')
+            fetchJobs()
         } catch (error) {
             console.error('Failed to toggle job:', error)
+            toast.error('Failed to update job')
         }
     }
 
-    const deleteJob = async (jobId: string) => {
-        if (!confirm('Are you sure you want to delete this job?')) return
+    const deleteJob = async (jobId: string, jobName: string) => {
+        if (!confirm(`Delete "${jobName}"? This cannot be undone.`)) return
+
         try {
             const response = await fetch(`/api/monitoring-jobs/${jobId}`, {
                 method: 'DELETE',
             })
-            if (response.ok) {
-                fetchJobs()
+
+            if (!response.ok) {
+                throw new Error('Failed to delete job')
             }
+
+            toast.success('Job deleted')
+            fetchJobs()
         } catch (error) {
             console.error('Failed to delete job:', error)
+            toast.error('Failed to delete job')
         }
     }
 
-    const runJob = async (jobId: string) => {
-        setRunningJobs(prev => new Set(prev).add(jobId))
+    const runJob = async (jobId: string, jobName: string) => {
+        setRunningJobs((prev) => new Set(prev).add(jobId))
+
         try {
             const response = await fetch(`/api/monitoring-jobs/${jobId}/run`, {
                 method: 'POST',
             })
-            if (response.ok) {
-                // Refresh after a short delay to show the running status
-                setTimeout(fetchJobs, 1000)
+
+            if (!response.ok) {
+                throw new Error('Failed to start job')
             }
+
+            toast.success(`Started "${jobName}"`)
+            setTimeout(fetchJobs, 1000)
         } catch (error) {
             console.error('Failed to run job:', error)
+            toast.error('Failed to start job')
         } finally {
             setTimeout(() => {
-                setRunningJobs(prev => {
+                setRunningJobs((prev) => {
                     const next = new Set(prev)
                     next.delete(jobId)
                     return next
@@ -239,11 +242,14 @@ export default function MonitoringPage() {
         return 'Daily'
     }
 
-    const getStatusIcon = (job: MonitoringJob) => {
+    const getStatusIcon = (job: MonitoringJobWithRun) => {
         if (!job.latest_run) return <Clock className="h-4 w-4 text-muted-foreground" />
-        if (job.latest_run.status === 'running') return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-        if (job.latest_run.status === 'completed') return <CheckCircle2 className="h-4 w-4 text-green-500" />
-        if (job.latest_run.status === 'failed') return <XCircle className="h-4 w-4 text-red-500" />
+        if (job.latest_run.status === 'running')
+            return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+        if (job.latest_run.status === 'completed')
+            return <CheckCircle2 className="h-4 w-4 text-green-500" />
+        if (job.latest_run.status === 'failed')
+            return <XCircle className="h-4 w-4 text-red-500" />
         return <Clock className="h-4 w-4 text-muted-foreground" />
     }
 
@@ -262,7 +268,7 @@ export default function MonitoringPage() {
     }
 
     const toggleJobExpanded = (jobId: string) => {
-        setExpandedJobs(prev => {
+        setExpandedJobs((prev) => {
             const next = new Set(prev)
             if (next.has(jobId)) {
                 next.delete(jobId)
@@ -273,7 +279,7 @@ export default function MonitoringPage() {
         })
     }
 
-    const getFindingIcon = (type: Finding['type']) => {
+    const getFindingIcon = (type: FindingType) => {
         switch (type) {
             case 'error':
                 return <XCircle className="h-4 w-4 text-red-500" />
@@ -300,7 +306,7 @@ export default function MonitoringPage() {
                 <div>
                     <h1 className="text-2xl font-bold">Scheduled Monitoring</h1>
                     <p className="text-muted-foreground">
-                        Configure automated monitoring jobs that run on a schedule
+                        Automated jobs that proactively monitor your services
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -319,7 +325,7 @@ export default function MonitoringPage() {
                             <DialogHeader>
                                 <DialogTitle>Create Monitoring Job</DialogTitle>
                                 <DialogDescription>
-                                    Set up a new scheduled monitoring job
+                                    Set up automated monitoring that runs on a schedule
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 py-4">
@@ -329,7 +335,9 @@ export default function MonitoringPage() {
                                         id="name"
                                         placeholder="e.g., API Health Check"
                                         value={newJob.name}
-                                        onChange={(e) => setNewJob({ ...newJob, name: e.target.value })}
+                                        onChange={(e) =>
+                                            setNewJob({ ...newJob, name: e.target.value })
+                                        }
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -338,14 +346,18 @@ export default function MonitoringPage() {
                                         id="description"
                                         placeholder="What does this job monitor?"
                                         value={newJob.description}
-                                        onChange={(e) => setNewJob({ ...newJob, description: e.target.value })}
+                                        onChange={(e) =>
+                                            setNewJob({ ...newJob, description: e.target.value })
+                                        }
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Job Type</Label>
                                     <Select
                                         value={newJob.job_type}
-                                        onValueChange={(value) => setNewJob({ ...newJob, job_type: value as typeof newJob.job_type })}
+                                        onValueChange={(value) =>
+                                            setNewJob({ ...newJob, job_type: value as JobType })
+                                        }
                                     >
                                         <SelectTrigger>
                                             <SelectValue />
@@ -369,14 +381,14 @@ export default function MonitoringPage() {
                                     <Label>Schedule</Label>
                                     <Select
                                         value={newJob.schedule_interval.toString()}
-                                        onValueChange={(value) => setNewJob({ ...newJob, schedule_interval: parseInt(value) })}
+                                        onValueChange={(value) =>
+                                            setNewJob({ ...newJob, schedule_interval: parseInt(value) })
+                                        }
                                     >
                                         <SelectTrigger>
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="5">Every 5 minutes</SelectItem>
-                                            <SelectItem value="10">Every 10 minutes</SelectItem>
                                             <SelectItem value="15">Every 15 minutes</SelectItem>
                                             <SelectItem value="30">Every 30 minutes</SelectItem>
                                             <SelectItem value="60">Hourly</SelectItem>
@@ -386,10 +398,12 @@ export default function MonitoringPage() {
                                     </Select>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Notify</Label>
+                                    <Label>Notifications</Label>
                                     <Select
                                         value={newJob.notify_on}
-                                        onValueChange={(value) => setNewJob({ ...newJob, notify_on: value as typeof newJob.notify_on })}
+                                        onValueChange={(value) =>
+                                            setNewJob({ ...newJob, notify_on: value as NotifyOn })
+                                        }
                                     >
                                         <SelectTrigger>
                                             <SelectValue />
@@ -397,7 +411,7 @@ export default function MonitoringPage() {
                                         <SelectContent>
                                             <SelectItem value="issues">Only when issues found</SelectItem>
                                             <SelectItem value="always">Always (every run)</SelectItem>
-                                            <SelectItem value="never">Never (log only)</SelectItem>
+                                            <SelectItem value="never">Never (dashboard only)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -424,10 +438,10 @@ export default function MonitoringPage() {
                 <Card>
                     <CardContent className="flex flex-col items-center justify-center py-12">
                         <Clock className="h-12 w-12 text-muted-foreground mb-4" />
-                        <h3 className="text-lg font-medium mb-2">No monitoring jobs</h3>
+                        <h3 className="text-lg font-medium mb-2">No monitoring jobs yet</h3>
                         <p className="text-muted-foreground text-center max-w-md mb-4">
-                            Create scheduled jobs to automatically monitor your services for deployments,
-                            errors, and health issues.
+                            Create automated jobs to continuously monitor your services for
+                            deployments, errors, and performance issues.
                         </p>
                         <Button onClick={() => setShowCreateDialog(true)}>
                             <Plus className="h-4 w-4 mr-2" />
@@ -440,7 +454,8 @@ export default function MonitoringPage() {
                     {jobs.map((job) => {
                         const typeInfo = JOB_TYPE_INFO[job.job_type]
                         const TypeIcon = typeInfo.icon
-                        const isRunning = runningJobs.has(job.id) || job.latest_run?.status === 'running'
+                        const isRunning =
+                            runningJobs.has(job.id) || job.latest_run?.status === 'running'
 
                         return (
                             <Card key={job.id} className={!job.enabled ? 'opacity-60' : ''}>
@@ -474,7 +489,7 @@ export default function MonitoringPage() {
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                onClick={() => runJob(job.id)}
+                                                onClick={() => runJob(job.id, job.name)}
                                                 disabled={isRunning}
                                                 title="Run now"
                                             >
@@ -499,7 +514,7 @@ export default function MonitoringPage() {
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                onClick={() => deleteJob(job.id)}
+                                                onClick={() => deleteJob(job.id, job.name)}
                                                 title="Delete"
                                             >
                                                 <Trash2 className="h-4 w-4 text-destructive" />
@@ -518,8 +533,11 @@ export default function MonitoringPage() {
                                                 <div className="flex items-center gap-2">
                                                     {getStatusIcon(job)}
                                                     <span className="text-muted-foreground">
-                                                        {job.latest_run.status === 'running' ? 'Running...' :
-                                                         job.latest_run.started_at ? getTimeAgo(job.latest_run.started_at) : 'Never'}
+                                                        {job.latest_run.status === 'running'
+                                                            ? 'Running...'
+                                                            : job.latest_run.started_at
+                                                              ? getTimeAgo(job.latest_run.started_at)
+                                                              : 'Never'}
                                                     </span>
                                                 </div>
                                                 {job.latest_run.duration_ms && (
@@ -543,96 +561,104 @@ export default function MonitoringPage() {
                                     </div>
 
                                     {/* Latest Run Results */}
-                                    {job.latest_run && (job.latest_run.summary || job.latest_run.findings?.length || job.latest_run.error_message) && (
-                                        <div className="mt-3">
-                                            <button
-                                                onClick={() => toggleJobExpanded(job.id)}
-                                                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
-                                            >
-                                                {expandedJobs.has(job.id) ? (
-                                                    <ChevronDown className="h-4 w-4" />
-                                                ) : (
-                                                    <ChevronRight className="h-4 w-4" />
-                                                )}
-                                                <span className="font-medium">
-                                                    {job.latest_run.status === 'failed' ? 'Error Details' : 'Latest Results'}
-                                                </span>
-                                                {job.latest_run.findings && job.latest_run.findings.length > 0 && (
-                                                    <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
-                                                        {job.latest_run.findings.length} finding{job.latest_run.findings.length !== 1 ? 's' : ''}
+                                    {job.latest_run &&
+                                        (job.latest_run.summary ||
+                                            (job.latest_run.findings?.length ?? 0) > 0 ||
+                                            job.latest_run.error_message) && (
+                                            <div className="mt-3">
+                                                <button
+                                                    onClick={() => toggleJobExpanded(job.id)}
+                                                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
+                                                >
+                                                    {expandedJobs.has(job.id) ? (
+                                                        <ChevronDown className="h-4 w-4" />
+                                                    ) : (
+                                                        <ChevronRight className="h-4 w-4" />
+                                                    )}
+                                                    <span className="font-medium">
+                                                        {job.latest_run.status === 'failed'
+                                                            ? 'Error Details'
+                                                            : 'Latest Results'}
                                                     </span>
-                                                )}
-                                            </button>
+                                                    {job.latest_run.findings &&
+                                                        job.latest_run.findings.length > 0 && (
+                                                            <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                                                                {job.latest_run.findings.length} finding
+                                                                {job.latest_run.findings.length !== 1
+                                                                    ? 's'
+                                                                    : ''}
+                                                            </span>
+                                                        )}
+                                                </button>
 
-                                            {expandedJobs.has(job.id) && (
-                                                <div className="mt-3 space-y-3">
-                                                    {/* Error message if failed */}
-                                                    {job.latest_run.error_message && (
-                                                        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                                                            <div className="flex items-start gap-2">
-                                                                <XCircle className="h-4 w-4 text-red-500 mt-0.5" />
-                                                                <div className="text-sm text-red-400">
-                                                                    {job.latest_run.error_message}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Summary */}
-                                                    {job.latest_run.summary && (
-                                                        <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
-                                                            {job.latest_run.summary}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Findings */}
-                                                    {job.latest_run.findings && job.latest_run.findings.length > 0 && (
-                                                        <div className="space-y-2">
-                                                            {job.latest_run.findings.map((finding, index) => (
-                                                                <div
-                                                                    key={index}
-                                                                    className={`rounded-lg p-3 border ${
-                                                                        finding.type === 'error' ? 'bg-red-500/5 border-red-500/20' :
-                                                                        finding.type === 'warning' ? 'bg-yellow-500/5 border-yellow-500/20' :
-                                                                        finding.type === 'success' ? 'bg-green-500/5 border-green-500/20' :
-                                                                        'bg-blue-500/5 border-blue-500/20'
-                                                                    }`}
-                                                                >
-                                                                    <div className="flex items-start gap-2">
-                                                                        {getFindingIcon(finding.type)}
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className="flex items-center justify-between gap-2">
-                                                                                <span className="text-sm font-medium">
-                                                                                    {finding.title}
-                                                                                </span>
-                                                                                {finding.metric && finding.value !== undefined && (
-                                                                                    <span className="text-xs font-mono bg-background/50 px-2 py-0.5 rounded">
-                                                                                        {finding.metric}: {finding.value}
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                            {finding.description && (
-                                                                                <p className="text-sm text-muted-foreground mt-1">
-                                                                                    {finding.description}
-                                                                                </p>
-                                                                            )}
-                                                                        </div>
+                                                {expandedJobs.has(job.id) && (
+                                                    <div className="mt-3 space-y-3">
+                                                        {job.latest_run.error_message && (
+                                                            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                                                                <div className="flex items-start gap-2">
+                                                                    <XCircle className="h-4 w-4 text-red-500 mt-0.5" />
+                                                                    <div className="text-sm text-red-400">
+                                                                        {job.latest_run.error_message}
                                                                     </div>
                                                                 </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                                            </div>
+                                                        )}
 
-                                                    {/* No findings message */}
-                                                    {!job.latest_run.findings?.length && !job.latest_run.summary && !job.latest_run.error_message && (
-                                                        <div className="text-sm text-muted-foreground italic">
-                                                            No details available for this run.
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                                                        {job.latest_run.summary && (
+                                                            <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
+                                                                {job.latest_run.summary}
+                                                            </div>
+                                                        )}
+
+                                                        {job.latest_run.findings &&
+                                                            job.latest_run.findings.length > 0 && (
+                                                                <div className="space-y-2">
+                                                                    {job.latest_run.findings.map(
+                                                                        (finding: Finding, index: number) => (
+                                                                            <div
+                                                                                key={index}
+                                                                                className={`rounded-lg p-3 border ${
+                                                                                    finding.type === 'error'
+                                                                                        ? 'bg-red-500/5 border-red-500/20'
+                                                                                        : finding.type === 'warning'
+                                                                                          ? 'bg-yellow-500/5 border-yellow-500/20'
+                                                                                          : finding.type === 'success'
+                                                                                            ? 'bg-green-500/5 border-green-500/20'
+                                                                                            : 'bg-blue-500/5 border-blue-500/20'
+                                                                                }`}
+                                                                            >
+                                                                                <div className="flex items-start gap-2">
+                                                                                    {getFindingIcon(finding.type)}
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <div className="flex items-center justify-between gap-2">
+                                                                                            <span className="text-sm font-medium">
+                                                                                                {finding.title}
+                                                                                            </span>
+                                                                                            {finding.metric &&
+                                                                                                finding.value !==
+                                                                                                    undefined && (
+                                                                                                    <span className="text-xs font-mono bg-background/50 px-2 py-0.5 rounded">
+                                                                                                        {finding.metric}:{' '}
+                                                                                                        {finding.value}
+                                                                                                    </span>
+                                                                                                )}
+                                                                                        </div>
+                                                                                        {finding.description && (
+                                                                                            <p className="text-sm text-muted-foreground mt-1">
+                                                                                                {finding.description}
+                                                                                            </p>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        )
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                 </CardContent>
                             </Card>
                         )
@@ -640,7 +666,6 @@ export default function MonitoringPage() {
                 </div>
             )}
 
-            {/* Info card about cron */}
             <Card className="bg-muted/30">
                 <CardContent className="py-4">
                     <div className="flex items-start gap-3">
@@ -648,9 +673,9 @@ export default function MonitoringPage() {
                         <div className="text-sm text-muted-foreground">
                             <p className="font-medium text-foreground mb-1">How it works</p>
                             <p>
-                                Jobs run automatically on their schedule. The cron system checks every 5 minutes
-                                for jobs that need to run. Results are stored and alerts are sent to Slack based
-                                on your notification settings.
+                                Jobs run automatically on their schedule. Results are stored and
+                                alerts are sent to Slack based on your notification settings. Jobs
+                                that fail repeatedly are flagged for review.
                             </p>
                         </div>
                     </div>

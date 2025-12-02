@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { updateIntegrationStatus } from '@/lib/integrations/helpers'
 import { Octokit } from '@octokit/rest'
 import { createAppAuth } from '@octokit/auth-app'
-
-function getSupabaseAdmin() {
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
 
 // GET - Handle GitHub App installation callback
 export async function GET(request: NextRequest) {
@@ -114,26 +108,20 @@ export async function GET(request: NextRequest) {
         p_secret_value: installationId,
       })
 
-      // Upsert integration status with metadata
-      await supabaseAdmin
-        .from('integrations')
-        .upsert({
-          org_id: orgId,
-          provider: 'github',
-          status: 'connected',
-          connected_by: user.id,
-          connected_at: new Date().toISOString(),
-          metadata: {
-            installation_id: installationId,
-            account: accountLogin,
-            repos: repos.slice(0, 20), // Store first 20 repos
-            repo_count: repos.length,
-          },
-          error_message: null,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'org_id,provider',
-        })
+      // Update integration status with metadata
+      await updateIntegrationStatus(
+        orgId,
+        'github',
+        supabaseAdmin,
+        'connected',
+        user.id,
+        {
+          installation_id: installationId,
+          account: accountLogin,
+          repos: repos.slice(0, 20), // Store first 20 repos
+          repo_count: repos.length,
+        }
+      )
 
       return NextResponse.redirect(new URL(`${redirectBase}?github=connected`, baseUrl))
     }

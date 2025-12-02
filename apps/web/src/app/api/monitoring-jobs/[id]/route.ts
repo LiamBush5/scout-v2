@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getUserOrg } from '@/lib/auth/helpers'
 import { z } from 'zod'
 
 const updateJobSchema = z.object({
@@ -22,13 +23,13 @@ export async function GET(
     try {
         const { id } = await params
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
 
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        const auth = await getUserOrg(supabase)
+        if ('error' in auth) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status })
         }
 
-        // Get job with recent runs
+        // Get job with recent runs - verify it belongs to user's org
         const { data: job, error } = await supabase
             .from('monitoring_jobs')
             .select(`
@@ -47,6 +48,7 @@ export async function GET(
                 )
             `)
             .eq('id', id)
+            .eq('org_id', auth.orgId)
             .single()
 
         if (error || !job) {
@@ -84,14 +86,26 @@ export async function PATCH(
     try {
         const { id } = await params
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
 
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        const auth = await getUserOrg(supabase)
+        if ('error' in auth) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status })
         }
 
         const body = await request.json()
         const validatedData = updateJobSchema.parse(body)
+
+        // Verify job belongs to user's org before updating
+        const { data: existingJob, error: checkError } = await supabase
+            .from('monitoring_jobs')
+            .select('id, schedule_interval')
+            .eq('id', id)
+            .eq('org_id', auth.orgId)
+            .single()
+
+        if (checkError || !existingJob) {
+            return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+        }
 
         // Build update object
         const updateData: Record<string, unknown> = {
@@ -101,19 +115,10 @@ export async function PATCH(
 
         // If enabling, set next_run_at
         if (validatedData.enabled === true) {
-            // Get current job to get schedule_interval
-            const { data: currentJob } = await supabase
-                .from('monitoring_jobs')
-                .select('schedule_interval')
-                .eq('id', id)
-                .single()
-
-            if (currentJob) {
-                const interval = validatedData.schedule_interval || currentJob.schedule_interval
-                const nextRunAt = new Date()
-                nextRunAt.setMinutes(nextRunAt.getMinutes() + interval)
-                updateData.next_run_at = nextRunAt.toISOString()
-            }
+            const interval = validatedData.schedule_interval || existingJob.schedule_interval
+            const nextRunAt = new Date()
+            nextRunAt.setMinutes(nextRunAt.getMinutes() + interval)
+            updateData.next_run_at = nextRunAt.toISOString()
         } else if (validatedData.enabled === false) {
             updateData.next_run_at = null
         }
@@ -122,6 +127,7 @@ export async function PATCH(
             .from('monitoring_jobs')
             .update(updateData)
             .eq('id', id)
+            .eq('org_id', auth.orgId)
             .select()
             .single()
 
@@ -151,20 +157,27 @@ export async function DELETE(
     try {
         const { id } = await params
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
 
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        const auth = await getUserOrg(supabase)
+        if ('error' in auth) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status })
         }
 
-        const { error } = await supabase
+        // Delete with org_id check to ensure user can only delete their org's jobs
+        const { error, count } = await supabase
             .from('monitoring_jobs')
             .delete()
             .eq('id', id)
+            .eq('org_id', auth.orgId)
 
         if (error) {
             console.error('Failed to delete monitoring job:', error)
             return NextResponse.json({ error: 'Failed to delete job' }, { status: 500 })
+        }
+
+        // If no rows deleted, job didn't exist or didn't belong to user's org
+        if (count === 0) {
+            return NextResponse.json({ error: 'Job not found' }, { status: 404 })
         }
 
         return NextResponse.json({ success: true })

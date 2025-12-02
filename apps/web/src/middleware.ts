@@ -6,17 +6,28 @@ export async function middleware(request: NextRequest) {
     request: { headers: request.headers },
   })
 
-  // DEV MODE: Bypass authentication entirely
+  // SECURITY: Auth bypass ONLY allowed in development AND with explicit flag
+  // This MUST NEVER be enabled in production environments
   const bypassAuth = process.env.BYPASS_AUTH === 'true'
+  const isDevelopment = process.env.NODE_ENV === 'development'
+
   if (bypassAuth) {
-    // Landing page is always public
-    if (request.nextUrl.pathname === '/') {
+    if (!isDevelopment) {
+      // CRITICAL: Refuse to bypass auth in non-development environments
+      console.error('SECURITY VIOLATION: BYPASS_AUTH=true in non-development environment. Ignoring.')
+    } else {
+      // Log warning even in development
+      console.warn('[DEV ONLY] Authentication bypass is ACTIVE - do not use in production')
+
+      // Landing page is always public
+      if (request.nextUrl.pathname === '/') {
+        return response
+      }
+      if (['/login', '/signup'].includes(request.nextUrl.pathname)) {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
       return response
     }
-    if (['/login', '/signup'].includes(request.nextUrl.pathname)) {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
-    }
-    return response
   }
 
   // Skip auth check if Supabase isn't configured

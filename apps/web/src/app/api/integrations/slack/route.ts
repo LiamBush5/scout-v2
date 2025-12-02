@@ -1,35 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
-
-function getSupabaseAdmin() {
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { getUserOrg } from '@/lib/auth/helpers'
+import { disconnectIntegration } from '@/lib/integrations/helpers'
 
 // PATCH - Update Slack settings (channels - supports single or multiple)
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const auth = await getUserOrg(supabase)
+    if ('error' in auth) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('current_org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.current_org_id) {
-      return NextResponse.json({ error: 'No organization found' }, { status: 400 })
-    }
-
-    const orgId = profile.current_org_id
+    const orgId = auth.orgId
     const body = await request.json()
 
     // Support both single channel_id and multiple channel_ids
@@ -55,13 +39,32 @@ export async function PATCH(request: NextRequest) {
     // Get channel info from Slack for each channel
     const channelNames: string[] = []
     for (const channelId of channelIds) {
-      const channelResponse = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
-        headers: {
-          'Authorization': `Bearer ${botToken}`,
-        },
-      })
-      const channelData = await channelResponse.json()
-      channelNames.push(channelData.ok ? channelData.channel?.name : channelId)
+      try {
+        const channelResponse = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
+          headers: {
+            'Authorization': `Bearer ${botToken}`,
+          },
+        })
+
+        if (!channelResponse.ok) {
+          console.warn(`Slack API HTTP error for channel ${channelId}: ${channelResponse.status}`)
+          channelNames.push(channelId) // Fallback to ID
+          continue
+        }
+
+        const channelData = await channelResponse.json()
+
+        if (!channelData || typeof channelData !== 'object') {
+          console.warn(`Invalid Slack API response for channel ${channelId}`)
+          channelNames.push(channelId)
+          continue
+        }
+
+        channelNames.push(channelData.ok && channelData.channel?.name ? channelData.channel.name : channelId)
+      } catch (err) {
+        console.warn(`Failed to fetch Slack channel info for ${channelId}:`, err)
+        channelNames.push(channelId) // Fallback to ID on error
+      }
     }
 
     // Get current integration
@@ -110,48 +113,15 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE() {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const auth = await getUserOrg(supabase)
+    if ('error' in auth) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('current_org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.current_org_id) {
-      return NextResponse.json({ error: 'No organization found' }, { status: 400 })
-    }
-
-    const orgId = profile.current_org_id
+    const orgId = auth.orgId
     const supabaseAdmin = getSupabaseAdmin()
 
-    // Delete secrets from Vault
-    await supabaseAdmin.rpc('delete_integration_secret', {
-      p_org_id: orgId,
-      p_provider: 'slack',
-      p_secret_type: 'bot_token',
-    })
-    await supabaseAdmin.rpc('delete_integration_secret', {
-      p_org_id: orgId,
-      p_provider: 'slack',
-      p_secret_type: 'channel_id',
-    })
-
-    // Update integration status
-    await supabaseAdmin
-      .from('integrations')
-      .update({
-        status: 'disconnected',
-        connected_by: null,
-        connected_at: null,
-        metadata: {},
-      })
-      .eq('org_id', orgId)
-      .eq('provider', 'slack')
+    await disconnectIntegration(orgId, 'slack', supabaseAdmin)
 
     return NextResponse.json({ success: true, message: 'Slack disconnected' })
   } catch (error) {

@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
 import { Client } from '@langchain/langgraph-sdk'
-import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { getUserOrg } from '@/lib/auth/helpers'
 
 const chatRequestSchema = z.object({
     message: z.string().min(1),
@@ -33,19 +34,6 @@ interface Credentials {
     datadog?: DatadogCredentials
     github?: GitHubCredentials
     slack?: SlackCredentials
-}
-
-function getSupabaseAdmin() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false,
-            },
-        }
-    )
 }
 
 /**

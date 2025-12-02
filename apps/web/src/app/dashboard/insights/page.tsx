@@ -24,6 +24,10 @@ import {
     Target,
     Lightbulb,
     ArrowRight,
+    Sparkles,
+    Zap,
+    Server,
+    GitBranch,
 } from 'lucide-react'
 
 interface ServiceHealth {
@@ -73,6 +77,16 @@ interface Summary {
     days_analyzed: number
 }
 
+interface Pattern {
+    type: 'recurring_cause' | 'time_pattern' | 'deployment_correlation' | 'service_hotspot'
+    title: string
+    description: string
+    severity: 'high' | 'medium' | 'low'
+    suggestion: string
+    incidents: number
+    services?: string[]
+}
+
 const TREND_CONFIG = {
     worsening: { icon: TrendingUp, color: 'text-red-500', bg: 'bg-red-500/10', label: 'More incidents' },
     improving: { icon: TrendingDown, color: 'text-green-500', bg: 'bg-green-500/10', label: 'Fewer incidents' },
@@ -109,17 +123,28 @@ export default function InsightsPage() {
     const [serviceHealth, setServiceHealth] = useState<ServiceHealth[]>([])
     const [alertEffectiveness, setAlertEffectiveness] = useState<AlertEffectiveness[]>([])
     const [rootCausePatterns, setRootCausePatterns] = useState<RootCausePattern[]>([])
+    const [patterns, setPatterns] = useState<Pattern[]>([])
 
     const fetchInsights = useCallback(async () => {
         setIsLoading(true)
         try {
-            const response = await fetch(`/api/insights?days_back=${daysBack}`)
-            if (response.ok) {
-                const data = await response.json()
+            // Fetch insights and patterns in parallel
+            const [insightsRes, patternsRes] = await Promise.all([
+                fetch(`/api/insights?days_back=${daysBack}`),
+                fetch(`/api/patterns?days_back=${daysBack}`),
+            ])
+
+            if (insightsRes.ok) {
+                const data = await insightsRes.json()
                 setSummary(data.summary)
                 setServiceHealth(data.service_health || [])
                 setAlertEffectiveness(data.alert_effectiveness || [])
                 setRootCausePatterns(data.root_cause_patterns || [])
+            }
+
+            if (patternsRes.ok) {
+                const data = await patternsRes.json()
+                setPatterns(data.patterns || [])
             }
         } catch (error) {
             console.error('Failed to fetch insights:', error)
@@ -239,6 +264,76 @@ export default function InsightsPage() {
                             </CardContent>
                         </Card>
                     </div>
+
+                    {/* Detected Patterns - AI Suggestions */}
+                    {patterns.length > 0 && (
+                        <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Sparkles className="h-5 w-5 text-primary" />
+                                    Pattern Analysis
+                                </CardTitle>
+                                <CardDescription>
+                                    AI-detected patterns with actionable suggestions
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {patterns.map((pattern, index) => {
+                                    const PatternIcon = pattern.type === 'recurring_cause' ? Zap :
+                                        pattern.type === 'deployment_correlation' ? GitBranch :
+                                        pattern.type === 'service_hotspot' ? Server : Clock
+
+                                    const severityColor = pattern.severity === 'high' ? 'border-red-500/30 bg-red-500/5' :
+                                        pattern.severity === 'medium' ? 'border-yellow-500/30 bg-yellow-500/5' :
+                                        'border-blue-500/30 bg-blue-500/5'
+
+                                    const severityBadge = pattern.severity === 'high' ? 'bg-red-500/10 text-red-500' :
+                                        pattern.severity === 'medium' ? 'bg-yellow-500/10 text-yellow-600' :
+                                        'bg-blue-500/10 text-blue-500'
+
+                                    return (
+                                        <div
+                                            key={index}
+                                            className={`p-4 rounded-lg border ${severityColor}`}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <div className="p-2 rounded-md bg-background/50">
+                                                    <PatternIcon className="h-4 w-4 text-muted-foreground" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <h4 className="font-medium text-sm">{pattern.title}</h4>
+                                                        <Badge variant="outline" className={`text-xs ${severityBadge} border-0`}>
+                                                            {pattern.severity}
+                                                        </Badge>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {pattern.incidents} incidents
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground mb-2">
+                                                        {pattern.description}
+                                                    </p>
+                                                    {pattern.services && pattern.services.length > 0 && (
+                                                        <div className="flex items-center gap-1 mb-2">
+                                                            <Server className="h-3 w-3 text-muted-foreground" />
+                                                            <span className="text-xs text-muted-foreground">
+                                                                {pattern.services.slice(0, 3).join(', ')}
+                                                                {pattern.services.length > 3 && ` +${pattern.services.length - 3} more`}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex items-start gap-2 p-2 bg-background/50 rounded-md">
+                                                        <Lightbulb className="h-3.5 w-3.5 text-yellow-500 mt-0.5 flex-shrink-0" />
+                                                        <p className="text-xs">{pattern.suggestion}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Root Cause Patterns */}
                     {rootCausePatterns.length > 0 && (
